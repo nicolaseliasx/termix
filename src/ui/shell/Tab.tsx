@@ -1,4 +1,5 @@
 import React from "react";
+import { isFeatureEnabled } from "@/lib/features";
 import { Button } from "@/components/button.tsx";
 import { useTranslation } from "react-i18next";
 import { getHostPassword } from "@/main-axios.ts";
@@ -268,20 +269,22 @@ export function Tab({
           </Button>
         )}
 
-        {tabType === "terminal" && onOpenFileManager && (
-          <Button
-            variant="ghost"
-            size="icon"
-            className="h-6 w-6"
-            onClick={(e) => {
-              e.stopPropagation();
-              onOpenFileManager();
-            }}
-            title={t("nav.openFileManager")}
-          >
-            <FolderOpen className="h-4 w-4 text-muted-foreground" />
-          </Button>
-        )}
+        {isFeatureEnabled("sftp") &&
+          tabType === "terminal" &&
+          onOpenFileManager && (
+            <Button
+              variant="ghost"
+              size="icon"
+              className="h-6 w-6"
+              onClick={(e) => {
+                e.stopPropagation();
+                onOpenFileManager();
+              }}
+              title={t("nav.openFileManager")}
+            >
+              <FolderOpen className="h-4 w-4 text-muted-foreground" />
+            </Button>
+          )}
 
         {canSplit && (
           <Button

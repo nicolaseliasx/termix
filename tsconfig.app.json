@@ -38,6 +38,7 @@
     "src/vite-env.d.ts",
     "src/ui/**/*.ts",
     "src/ui/**/*.tsx",
-    "src/types/**/*.ts"
+    "src/types/**/*.ts",
+    "src/shared/**/*.ts"
   ]
 }

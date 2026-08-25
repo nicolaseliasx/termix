@@ -1,5 +1,6 @@
 /* eslint-disable react-refresh/only-export-components */
 import { useEffect, useState, type MouseEvent } from "react";
+import { FEATURES, isFeatureEnabled } from "@/lib/features";
 import { useTranslation } from "react-i18next";
 import {
   Box,
@@ -112,13 +113,15 @@ export function getSshActions(
         label: "Terminal",
       },
     host.enableSsh &&
-      host.enableFileManager && {
+      host.enableFileManager &&
+      FEATURES.sftp && {
         type: "files" as TabType,
         icon: FolderSearch,
         label: "Files",
       },
     host.enableSsh &&
-      host.enableDocker && {
+      host.enableDocker &&
+      FEATURES.docker && {
         type: "docker" as TabType,
         icon: Box,
         label: "Docker",
@@ -501,7 +504,7 @@ export function HostItem({
           <MessagesSquare className="size-3.5" />
         </button>
       )}
-      {host.macAddress && (
+      {isFeatureEnabled("wake_on_lan") && host.macAddress && (
         <button
           title={t("hosts.wakeOnLanAction")}
           onClick={async (e) => {
@@ -653,7 +656,7 @@ export function HostItem({
                   {t("hosts.copyTerminalUrlAction")}
                 </DropdownMenuItem>
               )}
-              {host.enableSsh && host.enableFileManager && (
+              {host.enableSsh && host.enableFileManager && FEATURES.sftp && (
                 <DropdownMenuItem
                   onClick={(e) => {
                     e.stopPropagation();
@@ -681,7 +684,7 @@ export function HostItem({
                   {t("hosts.copyTunnelUrlAction")}
                 </DropdownMenuItem>
               )}
-              {host.enableSsh && host.enableDocker && (
+              {host.enableSsh && host.enableDocker && FEATURES.docker && (
                 <DropdownMenuItem
                   onClick={(e) => {
                     e.stopPropagation();

@@ -22,6 +22,7 @@ import {
   type LucideIcon,
 } from "lucide-react";
 import { isElectron } from "@/lib/electron";
+import { isFeatureEnabled, type FeatureId } from "@/lib/features";
 
 /**
  * The one list of navigation destinations.
@@ -183,9 +184,28 @@ export const RAIL_ITEMS: RailItemDef[] = [
  * dropped in the browser build so they never reach the rail, the mobile bar,
  * or the visibility toggles.
  */
+/** Optional-feature gating for rail destinations (build-time flags). */
+const RAIL_ITEM_FEATURES: Record<string, FeatureId> = {
+  snippets: "snippets",
+  macros: "macros",
+  history: "history",
+  "split-screen": "split_terminal",
+  workspaces: "split_terminal",
+  automations: "automations_panel",
+};
+/**
+ * Rail items kept in this build. Destinations behind a disabled build-time
+ * feature are dropped here so they never reach the rail, the mobile bar,
+ * the visibility toggles, or the command palette.
+ */
+export const FEATURE_RAIL_ITEMS: RailItemDef[] = RAIL_ITEMS.filter(
+  (item) =>
+    !(item.id in RAIL_ITEM_FEATURES) ||
+    isFeatureEnabled(RAIL_ITEM_FEATURES[item.id]),
+);
 export function visibleRailItems(): RailItemDef[] {
   const electron = isElectron();
-  return RAIL_ITEMS.filter((item) => !item.electronOnly || electron);
+  return FEATURE_RAIL_ITEMS.filter((item) => !item.electronOnly || electron);
 }
 
 /**
@@ -205,17 +225,17 @@ export const RAIL_UTILITY_ITEMS: RailItemDef[] = [
 ];
 
 /** Ids that may be opened in the right dock. */
-export const RIGHT_DOCKABLE_IDS = [...RAIL_ITEMS, ...RAIL_UTILITY_ITEMS]
+export const RIGHT_DOCKABLE_IDS = [...FEATURE_RAIL_ITEMS, ...RAIL_UTILITY_ITEMS]
   .filter((item) => item.rightDockable)
   .map((item) => item.id);
 
 /** Ids that may be opened as a full-width tab. */
-export const PROMOTABLE_IDS = [...RAIL_ITEMS, ...RAIL_UTILITY_ITEMS]
+export const PROMOTABLE_IDS = [...FEATURE_RAIL_ITEMS, ...RAIL_UTILITY_ITEMS]
   .filter((item) => item.promotable)
   .map((item) => item.id);
 
 /** Ids a user is allowed to hide, mirroring HideableRailView. */
-export const HIDEABLE_RAIL_IDS = RAIL_ITEMS.filter(
+export const HIDEABLE_RAIL_IDS = FEATURE_RAIL_ITEMS.filter(
   (item) => !item.alwaysVisible,
 ).map((item) => item.id);
 

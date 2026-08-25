@@ -38,6 +38,7 @@ import type {
 } from "@/features/terminal/Terminal";
 import type { GuacamoleAppHandle } from "@/features/guacamole/GuacamoleApp";
 import { useIsMobile } from "@/hooks/use-mobile";
+import { FEATURES } from "@/lib/features";
 import type { Tab, TabType, Host } from "@/types/ui-types";
 import type { SSHHost } from "@/types";
 import { useTabsSafe } from "@/shell/TabContext";
@@ -71,12 +72,12 @@ const loadFileManager = () =>
   import("@/features/file-manager/FileManager").then((m) => ({
     default: m.FileManager,
   }));
-const FileManager = lazy(loadFileManager);
+const FileManager = FEATURES.sftp === true ? lazy(loadFileManager) : null;
 const loadDockerManager = () =>
   import("@/features/docker/DockerManager").then((m) => ({
     default: m.DockerManager,
   }));
-const DockerManager = lazy(loadDockerManager);
+const DockerManager = FEATURES.docker === true ? lazy(loadDockerManager) : null;
 const loadHostMetricsTab = () =>
   import("@/features/host-metrics/HostMetricsTab").then((m) => ({
     default: m.HostMetricsTab,
@@ -166,8 +167,8 @@ const AiPanel = lazy(() =>
 
 const tabSurfaceLoaders: Partial<Record<TabType, () => Promise<unknown>>> = {
   terminal: loadTerminalFeature,
-  files: loadFileManager,
-  docker: loadDockerManager,
+  ...(FEATURES.sftp === true ? { files: loadFileManager } : {}),
+  ...(FEATURES.docker === true ? { docker: loadDockerManager } : {}),
   "host-metrics": loadHostMetricsTab,
   "proxmox-stats": loadProxmoxStatsTab,
   tmux_monitor: loadTmuxMonitor,
@@ -492,6 +493,13 @@ export function renderTabContent(
       );
 
     case "files":
+      if (!FileManager)
+        return (
+          <EmptyState
+            icon={FolderSearch}
+            messageKey="fileManager.noHostSelected"
+          />
+        );
       if (!host)
         return (
           <EmptyState
@@ -514,6 +522,8 @@ export function renderTabContent(
       );
 
     case "docker":
+      if (!DockerManager)
+        return <EmptyState icon={Box} messageKey="docker.noHostSelected" />;
       if (!host)
         return <EmptyState icon={Box} messageKey="docker.noHostSelected" />;
       return withTabSuspense(

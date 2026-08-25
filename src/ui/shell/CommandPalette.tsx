@@ -43,7 +43,8 @@ import {
 } from "@/main-axios";
 import type { Host, TabType, Tab, Snippet } from "@/types/ui-types";
 import { canEditHost } from "@/sidebar/host-permissions";
-import { RAIL_ITEMS, RAIL_UTILITY_ITEMS } from "@/sidebar/rail-items";
+import { FEATURE_RAIL_ITEMS, RAIL_UTILITY_ITEMS } from "@/sidebar/rail-items";
+import { FEATURES, isFeatureEnabled } from "@/lib/features";
 import { useAiAvailability } from "@/hooks/use-ai-availability";
 import { useSnippetRunner } from "@/hooks/use-snippet-runner.tsx";
 
@@ -92,12 +93,14 @@ function getSshActions(host: Host): {
       icon: Terminal,
       label: "Terminal",
     },
-    host.enableFileManager && {
-      type: "files",
-      icon: FolderSearch,
-      label: "Files",
-    },
-    host.enableDocker && { type: "docker", icon: Box, label: "Docker" },
+    host.enableFileManager &&
+      FEATURES.sftp && {
+        type: "files",
+        icon: FolderSearch,
+        label: "Files",
+      },
+    host.enableDocker &&
+      FEATURES.docker && { type: "docker", icon: Box, label: "Docker" },
     // --- tmux-monitor --- opt-in per host, off by default
     host.enableTerminal !== false &&
       host.enableTmuxMonitor && {
@@ -149,9 +152,11 @@ export function CommandPalette({
       getRecentActivity(5)
         .then(setRecentActivity)
         .catch(() => {});
-      getSnippets()
-        .then((data) => setSnippets((data ?? []) as unknown as Snippet[]))
-        .catch(() => {});
+      if (isFeatureEnabled("snippets")) {
+        getSnippets()
+          .then((data) => setSnippets((data ?? []) as unknown as Snippet[]))
+          .catch(() => {});
+      }
     }
   }, [isOpen]);
 
@@ -197,15 +202,16 @@ export function CommandPalette({
     groupedHosts.push({ folder, hosts: fhosts });
   }
 
-  const filteredSnippets = search.trim()
-    ? snippets.filter((s) => {
-        const query = search.toLowerCase();
-        return (
-          s.name.toLowerCase().includes(query) ||
-          s.content.toLowerCase().includes(query)
-        );
-      })
-    : [];
+  const filteredSnippets =
+    isFeatureEnabled("snippets") && search.trim()
+      ? snippets.filter((s) => {
+          const query = search.toLowerCase();
+          return (
+            s.name.toLowerCase().includes(query) ||
+            s.content.toLowerCase().includes(query)
+          );
+        })
+      : [];
 
   const activeTargetTab =
     terminalTabs.find((tab) => tab.id === activeTabId) ?? terminalTabs[0];
@@ -373,7 +379,7 @@ export function CommandPalette({
                   heading={t("commandPalette.navigation")}
                   className="px-2"
                 >
-                  {[...RAIL_ITEMS, ...RAIL_UTILITY_ITEMS]
+                  {[...FEATURE_RAIL_ITEMS, ...RAIL_UTILITY_ITEMS]
                     .filter((item) => item.kind !== "tab")
                     .filter((item) => item.id !== "ai" || aiGloballyEnabled)
                     .map((item) => {
@@ -455,39 +461,45 @@ export function CommandPalette({
                   heading={t("commandPalette.recentActivity")}
                   className="px-2"
                 >
-                  {recentActivity.map((item) => (
-                    <CommandItem
-                      key={item.id}
-                      value={`recent-activity-${item.id}`}
-                      onSelect={() =>
-                        handleAction(() =>
-                          onOpenTab(
-                            ACTIVITY_TAB_TYPE[item.type],
-                            item.hostName,
-                          ),
-                        )
-                      }
-                      className="group flex items-center gap-3 px-3 py-2 rounded-none hover:bg-accent-brand/10 cursor-pointer"
-                    >
-                      <div className="size-7 rounded-none bg-muted flex items-center justify-center group-hover:bg-accent-brand/20 transition-colors text-muted-foreground group-hover:text-accent-brand">
-                        {ACTIVITY_ICONS[item.type]}
-                      </div>
-                      <div className="flex flex-col flex-1 min-w-0">
-                        <span className="text-sm font-semibold truncate">
-                          {item.hostName}
-                        </span>
-                        <span className="text-xs text-muted-foreground capitalize">
-                          {item.type.replace("_", " ")}
-                        </span>
-                      </div>
-                      <div className="flex items-center gap-1 text-muted-foreground/50">
-                        <Clock className="size-3" />
-                        <span className="text-[10px]">
-                          {new Date(item.timestamp).toLocaleDateString()}
-                        </span>
-                      </div>
-                    </CommandItem>
-                  ))}
+                  {recentActivity
+                    .filter(
+                      (item) =>
+                        (item.type !== "file_manager" || FEATURES.sftp) &&
+                        (item.type !== "docker" || FEATURES.docker),
+                    )
+                    .map((item) => (
+                      <CommandItem
+                        key={item.id}
+                        value={`recent-activity-${item.id}`}
+                        onSelect={() =>
+                          handleAction(() =>
+                            onOpenTab(
+                              ACTIVITY_TAB_TYPE[item.type],
+                              item.hostName,
+                            ),
+                          )
+                        }
+                        className="group flex items-center gap-3 px-3 py-2 rounded-none hover:bg-accent-brand/10 cursor-pointer"
+                      >
+                        <div className="size-7 rounded-none bg-muted flex items-center justify-center group-hover:bg-accent-brand/20 transition-colors text-muted-foreground group-hover:text-accent-brand">
+                          {ACTIVITY_ICONS[item.type]}
+                        </div>
+                        <div className="flex flex-col flex-1 min-w-0">
+                          <span className="text-sm font-semibold truncate">
+                            {item.hostName}
+                          </span>
+                          <span className="text-xs text-muted-foreground capitalize">
+                            {item.type.replace("_", " ")}
+                          </span>
+                        </div>
+                        <div className="flex items-center gap-1 text-muted-foreground/50">
+                          <Clock className="size-3" />
+                          <span className="text-[10px]">
+                            {new Date(item.timestamp).toLocaleDateString()}
+                          </span>
+                        </div>
+                      </CommandItem>
+                    ))}
                 </CommandGroup>
               </>
             )}

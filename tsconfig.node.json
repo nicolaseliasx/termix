@@ -28,6 +28,7 @@
   },
   "include": [
     "src/backend/**/*.ts",
+    "src/shared/**/*.ts",
     "src/types/**/*.ts",
     "src/ui/types/**/*.ts"
   ],

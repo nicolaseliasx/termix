@@ -4,6 +4,41 @@ import tailwindcss from "@tailwindcss/vite";
 import { defineConfig } from "vite";
 import react from "@vitejs/plugin-react";
 import svgr from "vite-plugin-svgr";
+// Build-time feature flags for optional fork features. All default to false;
+// enable individually with VITE_FEATURE_<ID>=true (e.g. VITE_FEATURE_SNIPPETS=true),
+// or turn everything on with TERMIX_BUILD_PROFILE=full (an explicit
+// VITE_FEATURE_<ID>=false still wins). Injected as the `__TERMIX_FEATURES__`
+// literal consumed by src/ui/lib/features.ts.
+const FEATURE_IDS = [
+  "sftp",
+  "docker",
+  "split_terminal",
+  "history",
+  "snippets",
+  "macros",
+  "automations_panel",
+  "wake_on_lan",
+  "advanced_audit",
+] as const;
+
+const termixBuildProfile = process.env.TERMIX_BUILD_PROFILE;
+if (
+  termixBuildProfile !== undefined &&
+  !["core", "full", "custom"].includes(termixBuildProfile)
+) {
+  throw new Error(
+    `Invalid TERMIX_BUILD_PROFILE "${termixBuildProfile}". Expected core, full, or custom.`,
+  );
+}
+
+const termixFeatures = Object.fromEntries(
+  FEATURE_IDS.map((id) => {
+    const override = process.env[`VITE_FEATURE_${id.toUpperCase()}`];
+    if (override === "true") return [id, true];
+    if (override === "false") return [id, false];
+    return [id, termixBuildProfile === "full"];
+  }),
+) as Record<(typeof FEATURE_IDS)[number], boolean>;
 
 const sslCertPath = path.join(process.cwd(), "ssl/termix.crt");
 const sslKeyPath = path.join(process.cwd(), "ssl/termix.key");
@@ -104,6 +139,8 @@ export default defineConfig({
     "import.meta.env.VITE_APP_VERSION": JSON.stringify(
       packageJson.version || "0.0.0",
     ),
+    __TERMIX_BUILD_PROFILE__: JSON.stringify(termixBuildProfile ?? "core"),
+    __TERMIX_FEATURES__: JSON.stringify(termixFeatures),
   },
   resolve: {
     alias: {

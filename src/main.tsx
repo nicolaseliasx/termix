@@ -6,6 +6,7 @@ import "./ui/index.css";
 import { ThemeProvider } from "@/components/theme-provider";
 import "./ui/i18n/i18n";
 import { isElectron } from "@/lib/electron";
+import { FEATURES } from "@/lib/features";
 import { Toaster } from "@/components/sonner";
 import { Auth, getStoredAuth, clearStoredAuth } from "@/auth/Auth";
 import { getUserInfo, getCurrentToken, appReadyPromise } from "@/main-axios";
@@ -27,11 +28,14 @@ const TerminalApp = lazy(() =>
     default: m.default,
   })),
 );
-const FileManagerApp = lazy(() =>
-  import("@/features/file-manager/FileManagerApp").then((m) => ({
-    default: m.default,
-  })),
-);
+const FileManagerApp =
+  FEATURES.sftp === true
+    ? lazy(() =>
+        import("@/features/file-manager/FileManagerApp").then((m) => ({
+          default: m.default,
+        })),
+      )
+    : null;
 const TunnelApp = lazy(() =>
   import("@/features/tunnel/TunnelApp").then((m) => ({ default: m.default })),
 );
@@ -45,9 +49,14 @@ const ProxmoxStatsApp = lazy(() =>
     default: m.default,
   })),
 );
-const DockerApp = lazy(() =>
-  import("@/features/docker/DockerApp").then((m) => ({ default: m.default })),
-);
+const DockerApp =
+  FEATURES.docker === true
+    ? lazy(() =>
+        import("@/features/docker/DockerApp").then((m) => ({
+          default: m.default,
+        })),
+      )
+    : null;
 const GuacamoleApp = lazy(() =>
   import("@/features/guacamole/GuacamoleApp").then((m) => ({
     default: m.default,
@@ -97,12 +106,12 @@ function FullscreenApp() {
         />
       );
     case "file-manager":
-      return (
+      return FileManagerApp ? (
         <FileManagerApp
           hostId={hostId || undefined}
           initialPath={path || undefined}
         />
-      );
+      ) : null;
     case "tunnel":
       return <TunnelApp hostId={hostId || undefined} />;
     case "host-metrics":
@@ -111,7 +120,7 @@ function FullscreenApp() {
     case "proxmox-stats":
       return <ProxmoxStatsApp hostId={hostId || undefined} />;
     case "docker":
-      return <DockerApp hostId={hostId || undefined} />;
+      return DockerApp ? <DockerApp hostId={hostId || undefined} /> : null;
     case "rdp":
     case "vnc":
     case "telnet":

@@ -102,6 +102,7 @@ import {
 } from "./AdminSettingsSections";
 import { SSOProviderDialog } from "./SSOProviderDialog";
 import { AdminApiKeysSection } from "./AdminApiKeysSection";
+import { FEATURES } from "@/lib/features";
 import { AdminAuditLogSection } from "./AdminAuditLogSection";
 import {
   AdminCreateUserDialog,
@@ -1297,11 +1298,13 @@ export function AdminSettingsPanel({
         newKeyLoading={newKeyLoading}
       />
 
-      <AdminAuditLogSection
-        open={openSections.has("audit-log")}
-        onToggle={() => toggle("audit-log")}
-        users={users}
-      />
+      {FEATURES.advanced_audit && (
+        <AdminAuditLogSection
+          open={openSections.has("audit-log")}
+          onToggle={() => toggle("audit-log")}
+          users={users}
+        />
+      )}
 
       <AdminTouchInputSection
         open={openSections.has("touch-input")}

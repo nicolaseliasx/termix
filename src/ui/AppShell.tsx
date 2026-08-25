@@ -33,6 +33,7 @@ import {
   PROMOTABLE_IDS,
   RIGHT_DOCKABLE_IDS,
 } from "@/sidebar/rail-items";
+import { FEATURES } from "@/lib/features";
 import { MultiPanelHint } from "@/sidebar/MultiPanelHint";
 import { OnboardingDialog } from "@/onboarding/OnboardingDialog";
 import { UI_ONBOARDING_VERSION } from "@/types/ui-preferences";
@@ -58,11 +59,14 @@ const QuickConnectPanel = lazy(() =>
 const SerialPanel = lazy(() =>
   import("@/sidebar/SerialPanel").then((m) => ({ default: m.SerialPanel })),
 );
-const SplitScreenPanel = lazy(() =>
-  import("@/sidebar/SplitScreenPanel").then((m) => ({
-    default: m.SplitScreenPanel,
-  })),
-);
+const SplitScreenPanel =
+  FEATURES.split_terminal === true
+    ? lazy(() =>
+        import("@/sidebar/SplitScreenPanel").then((m) => ({
+          default: m.SplitScreenPanel,
+        })),
+      )
+    : null;
 const AlertManager = lazy(() =>
   import("@/dashboard/panels/alerts/AlertManager").then((m) => ({
     default: m.AlertManager,
@@ -73,33 +77,54 @@ const AlertManager = lazy(() =>
 const SshToolsPanel = lazy(() =>
   import("@/sidebar/SshToolsPanel").then((m) => ({ default: m.SshToolsPanel })),
 );
-const SnippetsPanel = lazy(() =>
-  import("@/sidebar/SnippetsPanel").then((m) => ({ default: m.SnippetsPanel })),
-);
-const MacrosPanel = lazy(() =>
-  import("@/sidebar/MacrosPanel").then((m) => ({ default: m.MacrosPanel })),
-);
+const SnippetsPanel =
+  FEATURES.snippets === true
+    ? lazy(() =>
+        import("@/sidebar/SnippetsPanel").then((m) => ({
+          default: m.SnippetsPanel,
+        })),
+      )
+    : null;
+const MacrosPanel =
+  FEATURES.macros === true
+    ? lazy(() =>
+        import("@/sidebar/MacrosPanel").then((m) => ({
+          default: m.MacrosPanel,
+        })),
+      )
+    : null;
 const FleetsPanel = lazy(() =>
   import("@/sidebar/FleetsPanel").then((m) => ({ default: m.FleetsPanel })),
 );
-const WorkspacesPanel = lazy(() =>
-  import("@/sidebar/WorkspacesPanel").then((m) => ({
-    default: m.WorkspacesPanel,
-  })),
-);
-const AutomationsPanel = lazy(() =>
-  import("@/sidebar/AutomationsPanel").then((m) => ({
-    default: m.AutomationsPanel,
-  })),
-);
+const WorkspacesPanel =
+  FEATURES.split_terminal === true
+    ? lazy(() =>
+        import("@/sidebar/WorkspacesPanel").then((m) => ({
+          default: m.WorkspacesPanel,
+        })),
+      )
+    : null;
+const AutomationsPanel =
+  FEATURES.automations_panel === true
+    ? lazy(() =>
+        import("@/sidebar/AutomationsPanel").then((m) => ({
+          default: m.AutomationsPanel,
+        })),
+      )
+    : null;
 const AiPanel = lazy(() =>
   import("@/features/ai/AiPanel").then((m) => ({
     default: m.AiPanel,
   })),
 );
-const HistoryPanel = lazy(() =>
-  import("@/sidebar/HistoryPanel").then((m) => ({ default: m.HistoryPanel })),
-);
+const HistoryPanel =
+  FEATURES.history === true
+    ? lazy(() =>
+        import("@/sidebar/HistoryPanel").then((m) => ({
+          default: m.HistoryPanel,
+        })),
+      )
+    : null;
 const SessionLogsPanel = lazy(() =>
   import("@/sidebar/SessionLogsPanel").then((m) => ({
     default: m.SessionLogsPanel,
@@ -1161,6 +1186,7 @@ export function AppShell({
     );
     let restoredSplitTabId: string | null = null;
     if (
+      FEATURES.split_terminal === true &&
       workspace.payload.splitMode !== "none" &&
       restoredPaneIds.some(Boolean)
     ) {
@@ -2317,7 +2343,7 @@ export function AppShell({
           </div>
         )}
 
-        {railView === "snippets" && (
+        {SnippetsPanel !== null && railView === "snippets" && (
           <div className="flex-1 min-h-0 overflow-y-auto">
             <SnippetsPanel
               terminalTabs={terminalTabs}
@@ -2329,7 +2355,7 @@ export function AppShell({
           </div>
         )}
 
-        {railView === "macros" && (
+        {MacrosPanel !== null && railView === "macros" && (
           <div className="flex-1 min-h-0 overflow-y-auto">
             <MacrosPanel
               terminalTabs={terminalTabs}
@@ -2359,7 +2385,7 @@ export function AppShell({
           </div>
         )}
 
-        {railView === "history" && (
+        {HistoryPanel !== null && railView === "history" && (
           <div className="flex flex-col flex-1 min-h-0 overflow-y-auto">
             <HistoryPanel
               terminalTabs={terminalTabs}
@@ -2368,7 +2394,7 @@ export function AppShell({
           </div>
         )}
 
-        {railView === "split-screen" && (
+        {SplitScreenPanel !== null && railView === "split-screen" && (
           <div className="flex-1 min-h-0 overflow-y-auto">
             <SplitScreenPanel
               tabs={tabs.filter(
@@ -2386,7 +2412,7 @@ export function AppShell({
           </div>
         )}
 
-        {railView === "workspaces" && (
+        {WorkspacesPanel !== null && railView === "workspaces" && (
           <div className="flex-1 min-h-0 overflow-y-auto">
             <WorkspacesPanel
               active={railView === "workspaces"}
@@ -2396,7 +2422,7 @@ export function AppShell({
           </div>
         )}
 
-        {railView === "automations" && (
+        {AutomationsPanel !== null && railView === "automations" && (
           <div className="flex-1 min-h-0 overflow-y-auto">
             <AutomationsPanel
               active={railView === "automations"}

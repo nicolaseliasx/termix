@@ -26,6 +26,7 @@ import { AddWidgetMenu } from "./dialogs/AddWidgetMenu";
 import { WidgetEditDialog } from "./dialogs/WidgetEditDialog";
 import { HomepageToolbar } from "./toolbar/HomepageToolbar";
 import { getWidgetType } from "./widgets/WidgetRegistry";
+import { FEATURES } from "@/lib/features";
 
 // Side-effect imports so widgets register themselves
 import "./widgets/ServiceLinkWidget";
@@ -46,8 +47,8 @@ import "./widgets/TermixUptimeWidget";
 import "./widgets/SystemOverviewWidget";
 import "./widgets/SshTerminalWidget";
 import "./widgets/QuickConnectWidget";
-import "./widgets/FileManagerWidget";
-import "./widgets/DockerWidget";
+// FileManagerWidget (SFTP) and DockerWidget are feature-gated: they are
+// imported dynamically below so disabled features stay out of the bundle.
 import "./widgets/TunnelWidget";
 import "./widgets/CalendarWidget";
 import "./widgets/CountdownWidget";
@@ -78,6 +79,16 @@ function nextZOrder(widgets: CanvasWidget[]): number {
     : Math.max(...nonFolders.map((w) => w.zOrder)) + 1;
 }
 
+// Feature-gated widgets self-register via side effect on import.
+const featureWidgetLoads: Promise<unknown>[] = [];
+if (FEATURES.sftp === true) {
+  featureWidgetLoads.push(import("./widgets/FileManagerWidget"));
+}
+if (FEATURES.docker === true) {
+  featureWidgetLoads.push(import("./widgets/DockerWidget"));
+}
+const featureWidgetsReady = Promise.all(featureWidgetLoads);
+
 export function HomepageCanvas({
   isReadOnly,
   fitOnLoad,
@@ -85,6 +96,17 @@ export function HomepageCanvas({
 }: HomepageCanvasProps) {
   const { t } = useTranslation();
   const containerRef = useRef<HTMLDivElement>(null);
+  // Re-render once feature-gated widgets finish registering themselves.
+  const [, setWidgetRegistryTick] = useState(0);
+  useEffect(() => {
+    let mounted = true;
+    featureWidgetsReady.then(() => {
+      if (mounted) setWidgetRegistryTick((tick) => tick + 1);
+    });
+    return () => {
+      mounted = false;
+    };
+  }, []);
   const [widgets, setWidgets] = useState<CanvasWidget[]>([]);
   const [pan, setPan] = useState(DEFAULT_PAN);
   const [zoom, setZoom] = useState(DEFAULT_ZOOM);

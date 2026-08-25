@@ -82,3 +82,43 @@ P7 dep cleanup, P8 hardening/tests.
   LAN note, future Tailscale) and `docs/fork/LOG.md` (this handover log).
 - Files: `docs/fork/DEPLOY.md`, `docs/fork/LOG.md`.
 - Revert: delete both files (commit `docs(fork): add fork deploy notes and agent handover log`).
+
+### 2026-08-25 — Phase 1 / T1.1 — Frontend build-time feature flags
+
+- What: introduced build-time feature flags (all default false) for
+  `sftp, docker, split_terminal, history, snippets, macros, automations_panel,
+wake_on_lan, advanced_audit`. Flags are injected by Vite `define` as
+  `__TERMIX_FEATURES__` (from `VITE_FEATURE_<ID>=true/false` env vars, or
+  `TERMIX_BUILD_PROFILE=full`), and consumed via `src/ui/lib/features.ts`
+  (`FEATURES`, `isFeatureEnabled`). Guards are module-level
+  (`FEATURES.x === true ? lazy(...) : null`) so disabled lazy imports are
+  tree-shaken (verified: optional chunks absent from default bundle).
+- Guards added:
+  - `rail-items.ts`: new `FEATURE_RAIL_ITEMS` filter (snippets/macros/history/
+    split-screen/workspaces/automations); derived ID lists + visibleRailItems use it.
+  - `AppShell.tsx`: lazy panels SnippetsPanel/MacrosPanel/HistoryPanel/
+    AutomationsPanel/SplitScreenPanel/WorkspacesPanel conditional; render sites
+    null-guarded; split-tab restore in applyWorkspace gated by split_terminal.
+    SessionLogsPanel/AlertsPanel untouched (core).
+  - `main.tsx`: FileManagerApp→sftp, DockerApp→docker (fullscreen apps).
+  - `CommandPalette.tsx`: navigation list uses FEATURE_RAIL_ITEMS; host file/docker
+    actions, snippet fetch/group, and file_manager/docker recent-activity entries gated.
+  - `tabUtils.tsx`: FileManager/DockerManager lazy + preloaders + tab render gated
+    (EmptyState fallback).
+  - `Tab.tsx`: terminal-toolbar file-manager button gated (sftp).
+  - `HostItem.tsx`: files/docker tab actions, copy-URL menu entries (sftp/docker),
+    Wake-on-LAN tray button (wake_on_lan).
+  - `HomepageCanvas.tsx`: FileManagerWidget/DockerWidget now feature-gated dynamic
+    imports with a registry re-render tick (avoids statically pulling SFTP/Docker UI
+    into the homepage chunk).
+  - `AdminSettingsPanel.tsx`: AdminAuditLogSection render gated (advanced_audit).
+- Absorbed prior uncommitted flag WIP (see T0.1 deviation): `src/shared/features.ts`
+  (env-name list, renamed FEATURE_AUTOMATIONS→FEATURE_AUTOMATIONS_PANEL per plan),
+  `src/ui/lib/build-features.ts` (now a shim over `@/lib/features`),
+  `scripts/features.test.ts`, `scripts/validate-feature-profile.ts`, package.json
+  feature scripts, tsconfig `src/shared` includes, `vite.config.ts` define
+  (reworked to the plan convention: VITE_FEATURE_* per-flag envs; profile full).
+- Validation: `npm run type-check` passed (needed
+  `NODE_OPTIONS=--max-old-space-size=1400` on the 2GB host; plain run OOMs).
+  Bundle evidence recorded after full build in the Validation section below.
+- Revert: revert commit `feat(fork): build-time feature flags for optional frontend features`.
