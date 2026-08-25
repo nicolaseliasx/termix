@@ -121,6 +121,35 @@ if [ "$ENABLE_SSL" = "true" ]; then
     if [ ! -f "/app/data/ssl/termix.crt" ] || [ ! -f "/app/data/ssl/termix.key" ]; then
         echo "Generating SSL certificates for domain: $DOMAIN"
 
+        IS_IPV4=false
+        if printf '%s' "$DOMAIN" | grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$'; then
+            IS_IPV4=true
+        fi
+
+        if [ "$IS_IPV4" = "true" ]; then
+            echo "SSL_DOMAIN is an IPv4 address, using it as an IP SAN entry"
+            SAN_DNS_ENTRIES="DNS.1 = localhost"
+            SAN_IP_ENTRIES="IP.1 = 127.0.0.1
+IP.2 = ::1
+IP.3 = 0.0.0.0
+IP.4 = $DOMAIN"
+            IP_INDEX=5
+        else
+            SAN_DNS_ENTRIES="DNS.1 = $DOMAIN
+DNS.2 = localhost"
+            SAN_IP_ENTRIES="IP.1 = 127.0.0.1
+IP.2 = ::1
+IP.3 = 0.0.0.0"
+            IP_INDEX=4
+        fi
+
+        for EXTRA_IP in $(echo "${SSL_SAN_IPS:-}" | tr ',' ' '); do
+            [ -n "$EXTRA_IP" ] || continue
+            SAN_IP_ENTRIES="$SAN_IP_ENTRIES
+IP.$IP_INDEX = $EXTRA_IP"
+            IP_INDEX=$((IP_INDEX + 1))
+        done
+
         cat > /app/data/ssl/openssl.conf << EOF
 [req]
 default_bits = 2048
@@ -143,12 +172,8 @@ keyUsage = nonRepudiation, digitalSignature, keyEncipherment
 subjectAltName = @alt_names
 
 [alt_names]
-DNS.1 = $DOMAIN
-DNS.2 = localhost
-DNS.3 = 127.0.0.1
-IP.1 = 127.0.0.1
-IP.2 = ::1
-IP.3 = 0.0.0.0
+$SAN_DNS_ENTRIES
+$SAN_IP_ENTRIES
 EOF
 
         openssl genrsa -out /app/data/ssl/termix.key 2048

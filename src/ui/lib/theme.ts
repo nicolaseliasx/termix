@@ -56,9 +56,9 @@ export const DASHBOARD_CARDS: DashboardCardConfig[] = [
 ];
 
 export const ACCENT_PRESET_COLORS = [
-  { label: "Orange", value: "#f59145" },
-  { label: "Blue", value: "#3b82f6" },
-  { label: "Green", value: "#22c55e" },
+  { label: "Orange", value: "#ff7000" },
+  { label: "Blue", value: "#0b6bff" },
+  { label: "Green", value: "#54da77" },
   { label: "Purple", value: "#a855f7" },
   { label: "Pink", value: "#ec4899" },
   { label: "Cyan", value: "#06b6d4" },

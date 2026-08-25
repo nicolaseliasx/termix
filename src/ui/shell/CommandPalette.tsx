@@ -230,7 +230,7 @@ export function CommandPalette({
     >
       <div
         className={cn(
-          "w-full max-w-2xl mx-4 overflow-hidden rounded-none border border-border bg-card shadow-2xl animate-in zoom-in-95 duration-200",
+          "w-full max-w-2xl mx-4 overflow-hidden rounded-none border border-border bg-card shadow-xl animate-in zoom-in-95 duration-200",
         )}
         onClick={(e) => e.stopPropagation()}
       >

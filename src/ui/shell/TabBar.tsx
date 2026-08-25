@@ -412,7 +412,7 @@ export function TabBar({
                     zIndex: 9999,
                     opacity: 0.85,
                   }}
-                  className={`flex items-center gap-2 shrink-0 border border-border text-sm shadow-lg
+                  className={`flex items-center gap-2 shrink-0 border border-border text-sm shadow-md
                 ${
                   tab.type === "dashboard"
                     ? `px-3.5 ${active ? "border-b-2 border-b-accent-brand bg-surface text-foreground" : "bg-sidebar text-muted-foreground"}`
@@ -555,7 +555,7 @@ export function TabBar({
                 top: contextPos.y,
                 zIndex: 10000,
               }}
-              className="bg-popover border border-border shadow-lg py-1 min-w-[180px]"
+              className="bg-popover border border-border shadow-md py-1 min-w-[180px]"
             >
               <div className="px-2 py-1 text-xs font-semibold text-muted-foreground truncate max-w-[200px]">
                 {ctxTab.label}

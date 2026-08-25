@@ -1,0 +1,45 @@
+services:
+  termix:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile
+    container_name: termix
+    restart: unless-stopped
+    ports:
+      - "8080:8080"
+      - "8443:8443"
+    volumes:
+      - termix-data:/app/data
+    environment:
+      PORT: "8080"
+      ENABLE_SSL: "true"
+      SSL_PORT: "8443"
+      SSL_DOMAIN: "192.168.15.4"
+      GUACD_HOST: "guacd"
+      GUACD_TUNNEL_HOST: "termix"
+      GUACD_RECORDING_PATH: "/termix-data/session_recordings/guacamole"
+      ENABLE_TELEMETRY: "false"
+      ALLOW_REGISTRATION: "false"
+      PUID: "1001"
+      PGID: "1001"
+    depends_on:
+      - guacd
+    networks:
+      - termix-net
+
+  guacd:
+    image: guacamole/guacd:1.6.0
+    container_name: guacd
+    restart: unless-stopped
+    volumes:
+      - termix-data:/termix-data
+    networks:
+      - termix-net
+
+volumes:
+  termix-data:
+    driver: local
+
+networks:
+  termix-net:
+    driver: bridge

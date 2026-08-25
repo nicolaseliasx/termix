@@ -568,7 +568,7 @@ export function SessionLogsPanel() {
       {/* Inline delete confirmation - positioned against the relative parent in AppShell */}
       {deleteTarget && (
         <div className="absolute inset-0 z-50 flex items-center justify-center bg-background/80 backdrop-blur-sm p-4">
-          <div className="bg-popover border border-border shadow-xl w-full max-w-xs flex flex-col gap-4 p-4">
+          <div className="bg-popover border border-border shadow-md w-full max-w-xs flex flex-col gap-4 p-4">
             <p className="text-sm text-foreground">
               {t("sessionLogs.confirmDelete")}
             </p>

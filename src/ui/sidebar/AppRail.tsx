@@ -527,7 +527,7 @@ export function AppRail({
         <div
           data-rail-context-menu
           style={{ position: "fixed", left: menuPos.x, top: menuPos.y }}
-          className="z-[10000] bg-popover border border-border shadow-lg py-1 min-w-[190px]"
+          className="z-[10000] bg-popover border border-border shadow-md py-1 min-w-[190px]"
         >
           {menuTarget && (
             <>

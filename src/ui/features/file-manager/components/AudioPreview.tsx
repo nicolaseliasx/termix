@@ -65,7 +65,7 @@ export function AudioPreview({
           <div className="flex justify-center">
             <div
               className={cn(
-                "w-32 h-32 rounded-lg bg-gradient-to-br from-pink-100 to-purple-100 flex items-center justify-center shadow-lg",
+                "w-32 h-32 rounded-lg bg-muted border border-border flex items-center justify-center shadow-sm",
                 color,
               )}
             >

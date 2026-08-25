@@ -2665,7 +2665,7 @@ export function HostEditor({
 
       {showQuickCredentialDialog && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-background/80 backdrop-blur-sm p-4">
-          <div className="bg-popover border border-border shadow-xl w-full max-w-sm flex flex-col gap-4 p-4">
+          <div className="bg-popover border border-border shadow-md w-full max-w-sm flex flex-col gap-4 p-4">
             <div className="flex items-center justify-between">
               <span className="text-sm font-bold">
                 {t("hosts.createCredentialFromHostTitle")}

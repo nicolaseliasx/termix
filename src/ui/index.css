@@ -100,7 +100,7 @@
 }
 
 :root {
-  --accent-brand: #f59145;
+  --accent-brand: #54da77;
   --background: oklch(1 0 0);
   --foreground: oklch(0.1802 0.0043 128.73);
   --card: oklch(1 0 0);
@@ -137,39 +137,39 @@
 }
 
 .dark {
-  --background: oklch(0.155 0.004 128.73);
-  --foreground: oklch(0.985 0 0);
-  --card: oklch(0.21 0.004 128.68);
-  --card-foreground: oklch(0.985 0 0);
-  --popover: oklch(0.21 0.004 128.68);
-  --popover-foreground: oklch(0.985 0 0);
-  --primary: oklch(0.922 0 0);
-  --primary-foreground: oklch(0.2115 0.0042 128.68);
-  --secondary: oklch(0.269 0 0);
-  --secondary-foreground: oklch(0.985 0 0);
-  --surface: oklch(0.185 0.004 128.73);
-  --surface-dim: oklch(0.165 0.003 128.73);
-  --muted: oklch(0.255 0 0);
-  --muted-foreground: oklch(0.72 0 0);
-  --accent: oklch(0.255 0 0);
-  --accent-foreground: oklch(0.985 0 0);
+  --background: #000000;
+  --foreground: #f2f2f2;
+  --card: #000000;
+  --card-foreground: #f2f2f2;
+  --popover: #000000;
+  --popover-foreground: #f2f2f2;
+  --primary: #0b6bff;
+  --primary-foreground: #ffffff;
+  --secondary: #000000;
+  --secondary-foreground: #f2f2f2;
+  --surface: #000000;
+  --surface-dim: #000000;
+  --muted: #121212;
+  --muted-foreground: #b4b4b4;
+  --accent: #121212;
+  --accent-foreground: #f2f2f2;
   --destructive: oklch(0.704 0.191 22.216);
-  --border: oklch(1 0 0 / 12%);
-  --input: oklch(1 0 0 / 15%);
-  --ring: oklch(0.556 0 0);
-  --chart-1: oklch(0.87 0 0);
-  --chart-2: oklch(0.556 0 0);
-  --chart-3: oklch(0.439 0 0);
-  --chart-4: oklch(0.371 0 0);
-  --chart-5: oklch(0.269 0 0);
-  --sidebar: oklch(0.195 0.004 128.68);
-  --sidebar-foreground: oklch(0.985 0 0);
-  --sidebar-primary: oklch(0.488 0.243 264.376);
-  --sidebar-primary-foreground: oklch(0.985 0 0);
-  --sidebar-accent: oklch(0.255 0 0);
-  --sidebar-accent-foreground: oklch(0.985 0 0);
-  --sidebar-border: oklch(1 0 0 / 12%);
-  --sidebar-ring: oklch(0.556 0 0);
+  --border: #2f2f2f;
+  --input: #2f2f2f;
+  --ring: #0b6bff;
+  --chart-1: #54da77;
+  --chart-2: #0b6bff;
+  --chart-3: #b4b4b4;
+  --chart-4: #8e8e8e;
+  --chart-5: #ff7000;
+  --sidebar: #000000;
+  --sidebar-foreground: #f2f2f2;
+  --sidebar-primary: #0b6bff;
+  --sidebar-primary-foreground: #ffffff;
+  --sidebar-accent: #121212;
+  --sidebar-accent-foreground: #f2f2f2;
+  --sidebar-border: #2f2f2f;
+  --sidebar-ring: #0b6bff;
 }
 
 /* ── Dracula ────────────────────────────────────────────────── */

@@ -1102,7 +1102,7 @@ export function SidebarTree({
       {/* Floating selection bar */}
       {selectionMode && (
         <div className="absolute bottom-4 inset-x-3 z-50">
-          <div className="bg-popover border border-border shadow-xl px-2.5 py-2 flex items-center gap-1.5 flex-wrap">
+          <div className="bg-popover border border-border shadow-md px-2.5 py-2 flex items-center gap-1.5 flex-wrap">
             <span className="text-xs font-semibold tabular-nums shrink-0">
               {t("hosts.nSelected", { count: selectedHostIds.size })}
             </span>
@@ -1350,7 +1350,7 @@ export function SidebarTree({
       {/* Confirm dialog */}
       {confirmDialog && (
         <div className="absolute inset-0 z-50 flex items-center justify-center bg-background/80 backdrop-blur-sm p-4">
-          <div className="bg-popover border border-border shadow-xl w-full max-w-xs flex flex-col gap-4 p-4">
+          <div className="bg-popover border border-border shadow-md w-full max-w-xs flex flex-col gap-4 p-4">
             <p className="text-sm text-foreground">{confirmDialog.message}</p>
             <div className="flex justify-end gap-2">
               <button

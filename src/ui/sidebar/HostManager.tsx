@@ -744,7 +744,7 @@ export function HostManager({
       {/* Confirm dialog */}
       {confirmDialog && (
         <div className="absolute inset-0 z-50 flex items-center justify-center bg-background/80 backdrop-blur-sm p-4">
-          <div className="bg-popover border border-border shadow-xl w-full max-w-xs flex flex-col gap-4 p-4">
+          <div className="bg-popover border border-border shadow-md w-full max-w-xs flex flex-col gap-4 p-4">
             <p className="text-sm text-foreground">{confirmDialog.message}</p>
             <div className="flex justify-end gap-2">
               <button
@@ -769,7 +769,7 @@ export function HostManager({
 
       {showUnsavedHostDialog && (
         <div className="absolute inset-0 z-50 flex items-center justify-center bg-background/80 backdrop-blur-sm p-4">
-          <div className="bg-popover border border-border shadow-xl w-full max-w-xs flex flex-col gap-4 p-4">
+          <div className="bg-popover border border-border shadow-md w-full max-w-xs flex flex-col gap-4 p-4">
             <div className="flex flex-col gap-1">
               <p className="text-sm font-semibold text-foreground">
                 {t("common.unsavedChanges")}
@@ -799,7 +799,7 @@ export function HostManager({
       {/* Deploy credential dialog */}
       {deployDialog && (
         <div className="absolute inset-0 z-50 flex items-center justify-center bg-background/80 backdrop-blur-sm p-4">
-          <div className="bg-popover border border-border shadow-xl w-full max-w-sm flex flex-col gap-4 p-4">
+          <div className="bg-popover border border-border shadow-md w-full max-w-sm flex flex-col gap-4 p-4">
             <div className="flex items-center justify-between">
               <span className="text-sm font-bold">
                 {t("credentials.deployDialogTitle")}

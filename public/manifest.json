@@ -1,6 +1,6 @@
 {
-  "name": "Termix",
-  "short_name": "Termix",
+  "name": "termix",
+  "short_name": "termix",
   "description": "Self-hosted SSH and remote desktop management.",
   "theme_color": "#09090b",
   "background_color": "#09090b",

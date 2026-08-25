@@ -124,10 +124,10 @@ export function Tab({
       "bg-background/40 text-muted-foreground border-border opacity-60",
     isDragging && "opacity-70",
     isHoveredDropTarget &&
-      "bg-blue-500/20 border-blue-500 ring-2 ring-blue-500/50",
+      "bg-primary/20 border-primary ring-2 ring-primary/50",
     !isHoveredDropTarget &&
       isValidDropTarget &&
-      "border-blue-400/50 bg-background/90",
+      "border-primary/50 bg-background/90",
     !isDragOver &&
       !isDragging &&
       !isValidDropTarget &&
