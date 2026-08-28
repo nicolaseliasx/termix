@@ -79,3 +79,27 @@ Relevant diff (see commit `chore(fork): local theme, SSL SAN for IP domain and c
   production container then passed Docker health, backend health (`30001`),
   HTTP (`8080`), HTTPS (`8443`), Sessions asset discovery, and the unauthenticated
   persistent-sessions `401` boundary.
+
+## Clean logs and sessions UX deploy (2026-08-28)
+
+- Commit: `bb68e7f` (`feat(fork): persistent sessions, clean logs and sessions UX`),
+  pushed to `origin/fork/baseline`.
+- Backup: `/home/admin/termix/backups/termix-data-20260828-121715.tar.gz`
+  (`sha256:f2fffed934f255541925966c1d13bc01fea6b26d3afbea3d4810ca1e451b067f`,
+  `admin:admin`, mode `0640`).
+- Deployed image: `docker-termix:candidate-20260828-121715`
+  (`sha256:81ee88152d5221f97d1bbef3a6897e2628157ff7c1c39eb122d9ed8063d66ab4`).
+- Rollback image: `docker-termix:rollback-20260828-121715` (the image that was
+  running immediately before this deploy). To roll back without altering the
+  data volume:
+
+  ```sh
+  docker tag docker-termix:rollback-20260828-121715 docker-termix:latest
+  docker compose -f docker/docker-compose.local.yml up -d --no-build termix
+  ```
+
+- Validation: Docker health, backend health (`30001` → `{"status":"ok"}`),
+  HTTP (`8080` → 301 to HTTPS), HTTPS (`8443` → 200), Sessions asset
+  (`SessionsPanel-*.js` served), unauthenticated
+  `/api/v1/persistent-sessions` → `401`, and startup logs confirmed emoji-free
+  with plain `[LEVEL] [SERVICE]` tags.
