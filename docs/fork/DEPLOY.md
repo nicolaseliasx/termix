@@ -103,3 +103,24 @@ Relevant diff (see commit `chore(fork): local theme, SSL SAN for IP domain and c
   (`SessionsPanel-*.js` served), unauthenticated
   `/api/v1/persistent-sessions` → `401`, and startup logs confirmed emoji-free
   with plain `[LEVEL] [SERVICE]` tags.
+
+## Persistent terminals, AI newline, and favicon deploy (2026-08-28)
+
+- Commit: `0c3b8c5` (`feat(fork): keep persistent terminals and add chat newlines`).
+- Backup: `/home/admin/termix/backups/termix-data-20260828-130446.tar.gz`
+  (`sha256:4ceaf17374642a6bec9cd9ab90331aed5e92c72d1902fc87da44d7ae926ff277`,
+  `root:root`, mode `0644`).
+- Deployed image: `docker-termix:candidate-20260828-130446`
+  (`sha256:ff854208b51703e91cf9a7099f7b199e29adeeff7b549a8a8d8c1c3d309b5657`).
+- Rollback image: `docker-termix:rollback-20260828-130446`. To roll back
+  without altering the data volume:
+
+  ```sh
+  docker tag docker-termix:rollback-20260828-130446 docker-termix:latest
+  docker compose -f docker/docker-compose.local.yml up -d --no-build termix
+  ```
+
+- Validation: Docker health is `healthy`; backend health (`30001`) returns
+  `{"status":"ok"}`; HTTPS serves `/favicon.svg` with `200`; HTTP (`8080`)
+  redirects with `301`; unauthenticated `/api/v1/persistent-sessions` returns
+  `401`.

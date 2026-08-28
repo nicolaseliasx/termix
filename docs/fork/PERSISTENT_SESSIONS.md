@@ -2,7 +2,7 @@
 
 Phase 2 Batch 1 stores persistent tmux session lifecycle facts in `persistent_sessions` and redacted audit metadata in `persistent_session_events`. A row is owner- and host-scoped; active host/tmux names are unique. `ended_at` and `end_reason` derive terminal states, so the database never claims a session is attached based solely on stale metadata.
 
-The runtime SQLite migration uses `CREATE TABLE/INDEX IF NOT EXISTS`; it is additive and runs at normal database startup. No production database was opened or migrated during this work.
+The runtime SQLite migration uses `CREATE TABLE/INDEX IF NOT EXISTS`; it is additive and runs at normal database startup. The production SQLite volume is backed up before deployment, and the migration runs during normal backend startup.
 
 Tmux names use the safe 64-character session-name contract. Working directories may be absolute, `~`, or `~/…`; home-relative paths expand `$HOME` while the remaining path stays shell-quoted.
 
