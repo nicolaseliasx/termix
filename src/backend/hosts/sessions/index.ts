@@ -3,7 +3,6 @@ export * from "./errors.js";
 export * from "./gateway.js";
 export * from "./lifecycle.js";
 export * from "./reconciler.js";
-export * from "./expiry.js";
 export * from "./maintenance.js";
 export * from "./persistent-attachment-manager.js";
 export * from "./tmux-adapter.js";

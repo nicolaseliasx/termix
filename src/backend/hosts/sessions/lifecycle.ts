@@ -7,29 +7,24 @@ import type {
 import { resolveHostById } from "../host-resolver.js";
 import { PersistentSessionError } from "./errors.js";
 import type { PersistentSessionGateway } from "./gateway.js";
-import type {
-  PersistentSessionExpiryMode,
-  RemotePersistentSession,
-} from "./types.js";
-import {
-  DEFAULT_IDLE_EXPIRY_SECONDS,
-  validateIdleExpiry,
-  validatePersistentSessionName,
-} from "./types.js";
+import type { RemotePersistentSession } from "./types.js";
+import { validatePersistentSessionName } from "./types.js";
 
 export type SessionCreateInput = {
   hostId: number;
   displayName: string;
   tmuxSessionName: string;
-  expiryMode?: PersistentSessionExpiryMode;
-  expirySeconds?: number;
 };
 export type SessionPatchInput = {
   displayName?: string;
   tmuxSessionName?: string;
-  expiryMode?: PersistentSessionExpiryMode;
-  expirySeconds?: number;
 };
+
+/**
+ * Sessions never expire: they run until manually terminated. The remote
+ * marker keeps a `manual` expiry mode purely for tmux marker compatibility.
+ */
+const NEVER_EXPIRES = "manual" as const;
 
 export class PersistentSessionLifecycleService {
   constructor(
@@ -44,37 +39,6 @@ export class PersistentSessionLifecycleService {
     const host = await this.resolveHost(hostId, userId);
     if (!host) throw new PersistentSessionError("PERSISTENT_SESSION_NOT_FOUND");
     return host;
-  }
-  /**
-   * Resolves the expiry policy. Omitted fields default to idle/6h so a
-   * bare create call keeps the session for a working day after detach;
-   * explicit values are still validated as before.
-   */
-  private policy(
-    mode?: PersistentSessionExpiryMode,
-    seconds?: number,
-  ): {
-    mode: PersistentSessionExpiryMode;
-    seconds?: number;
-    expiresAt: string | null;
-  } {
-    const resolvedMode = mode ?? "idle";
-    if (resolvedMode !== "manual" && resolvedMode !== "idle")
-      throw new PersistentSessionError("PERSISTENT_SESSION_INVALID_EXPIRY");
-    const resolvedSeconds =
-      resolvedMode === "idle" && seconds === undefined
-        ? DEFAULT_IDLE_EXPIRY_SECONDS
-        : seconds;
-    if (resolvedMode === "idle" && !validateIdleExpiry(resolvedSeconds))
-      throw new PersistentSessionError("PERSISTENT_SESSION_INVALID_EXPIRY");
-    return {
-      mode: resolvedMode,
-      seconds: resolvedMode === "idle" ? resolvedSeconds : undefined,
-      expiresAt:
-        resolvedMode === "idle"
-          ? new Date(Date.now() + resolvedSeconds! * 1000).toISOString()
-          : null,
-    };
   }
   private marker(
     remote: RemotePersistentSession | undefined,
@@ -100,7 +64,6 @@ export class PersistentSessionLifecycleService {
       throw new PersistentSessionError("PERSISTENT_SESSION_INVALID_NAME");
     if (typeof input.displayName !== "string" || !input.displayName.trim())
       throw new PersistentSessionError("PERSISTENT_SESSION_INVALID_REQUEST");
-    const policy = this.policy(input.expiryMode, input.expirySeconds);
     const host = await this.host(input.hostId, userId);
     const id = randomUUID();
     const createdAt = new Date().toISOString();
@@ -114,8 +77,7 @@ export class PersistentSessionLifecycleService {
       name: input.tmuxSessionName,
       id,
       createdAt,
-      expiryMode: policy.mode,
-      expirySeconds: policy.seconds,
+      expiryMode: NEVER_EXPIRES,
     });
     this.marker(
       (await this.gateway.list(host)).find(
@@ -124,22 +86,17 @@ export class PersistentSessionLifecycleService {
       id,
     );
     // A local failure intentionally leaves the verified remote session intact; no compensating kill is safe here.
-    const record = await this.repository.create({
+    return this.repository.create({
       id,
       userId,
       hostId: input.hostId,
       displayName: input.displayName.trim(),
       tmuxSessionName: input.tmuxSessionName,
       managementState: "managed",
-      expiryMode: policy.mode,
-      expirySeconds: policy.seconds ?? null,
+      expiryMode: NEVER_EXPIRES,
+      expirySeconds: null,
       remoteCreatedAt: createdAt,
     });
-    if (policy.expiresAt)
-      return (await this.repository.update(id, userId, {
-        expiresAt: policy.expiresAt,
-      }))!;
-    return record;
   }
   async patch(
     id: string,
@@ -173,15 +130,6 @@ export class PersistentSessionLifecycleService {
       );
       update.tmuxSessionName = patch.tmuxSessionName;
     }
-    if (patch.expiryMode !== undefined || patch.expirySeconds !== undefined) {
-      const policy = this.policy(
-        patch.expiryMode ?? (record.expiryMode as PersistentSessionExpiryMode),
-        patch.expirySeconds ?? record.expirySeconds ?? undefined,
-      );
-      update.expiryMode = policy.mode;
-      update.expirySeconds = policy.seconds ?? null;
-      update.expiresAt = policy.expiresAt;
-    }
     const saved = await this.repository.update(id, userId, update);
     if (!saved)
       throw new PersistentSessionError("PERSISTENT_SESSION_NOT_FOUND");
@@ -212,8 +160,6 @@ export class PersistentSessionLifecycleService {
       hostId: number;
       tmuxSessionName: string;
       displayName?: string;
-      expiryMode?: PersistentSessionExpiryMode;
-      expirySeconds?: number;
     },
   ): Promise<PersistentSessionRecord> {
     if (!validatePersistentSessionName(input.tmuxSessionName))
@@ -226,15 +172,13 @@ export class PersistentSessionLifecycleService {
       throw new PersistentSessionError("PERSISTENT_SESSION_NOT_FOUND");
     if (remote.marker)
       throw new PersistentSessionError("PERSISTENT_SESSION_CONFLICT");
-    const policy = this.policy(input.expiryMode, input.expirySeconds);
     const id = randomUUID();
     const createdAt = new Date().toISOString();
     await this.gateway.mark(host, {
       name: input.tmuxSessionName,
       id,
       createdAt,
-      expiryMode: policy.mode,
-      expirySeconds: policy.seconds,
+      expiryMode: NEVER_EXPIRES,
     });
     this.marker(
       (await this.gateway.list(host)).find(
@@ -242,7 +186,7 @@ export class PersistentSessionLifecycleService {
       ),
       id,
     );
-    const record = await this.repository.create(
+    return this.repository.create(
       {
         id,
         userId,
@@ -250,17 +194,12 @@ export class PersistentSessionLifecycleService {
         displayName: input.displayName?.trim() || input.tmuxSessionName,
         tmuxSessionName: input.tmuxSessionName,
         managementState: "managed",
-        expiryMode: policy.mode,
-        expirySeconds: policy.seconds ?? null,
+        expiryMode: NEVER_EXPIRES,
+        expirySeconds: null,
         remoteCreatedAt: remote.createdAt ?? createdAt,
       },
       "adopted",
     );
-    if (policy.expiresAt)
-      return (await this.repository.update(id, userId, {
-        expiresAt: policy.expiresAt,
-      }))!;
-    return record;
   }
   async refresh(
     hostId: number,

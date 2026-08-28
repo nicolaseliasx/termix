@@ -46,4 +46,19 @@ export function applyPersistentSessionMigration(sqlite: Database.Database): void
       error,
     });
   }
+  // Sessions never expire: active rows created under an earlier expiry
+  // policy are converted to manual so nothing sweeps them away later.
+  try {
+    sqlite.exec(`
+      UPDATE persistent_sessions
+      SET expiry_mode = 'manual', expiry_seconds = NULL, expires_at = NULL
+      WHERE ended_at IS NULL
+        AND (expiry_mode <> 'manual' OR expires_at IS NOT NULL)
+    `);
+  } catch (error) {
+    databaseLogger.warn("Failed to neutralize persistent-session expiry", {
+      operation: "schema_migration",
+      error,
+    });
+  }
 }

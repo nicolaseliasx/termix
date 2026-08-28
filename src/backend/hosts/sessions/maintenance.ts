@@ -4,7 +4,6 @@ import {
 } from "../../database/repositories/factory.js";
 import { resolveHostById } from "../host-resolver.js";
 import { SshPersistentSessionGateway } from "./gateway.js";
-import { PersistentSessionExpirer } from "./expiry.js";
 import { PersistentSessionReconciler } from "./reconciler.js";
 
 export class PersistentSessionMaintenance {
@@ -18,21 +17,14 @@ export class PersistentSessionMaintenance {
     },
     resolveHostById,
   );
-  private readonly expirer = new PersistentSessionExpirer(
-    createCurrentPersistentSessionRepository(),
-    new SshPersistentSessionGateway(),
-    resolveHostById,
-  );
   start(): void {
     this.reconciler.start();
-    this.expirer.start();
   }
   stop(): void {
     this.reconciler.stop();
-    this.expirer.stop();
   }
   runOnce() {
-    return Promise.all([this.reconciler.runOnce(), this.expirer.runOnce()]);
+    return this.reconciler.runOnce();
   }
 }
 let maintenance: PersistentSessionMaintenance | undefined;

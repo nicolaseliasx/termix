@@ -57,6 +57,15 @@ export class PersistentSessionReconciler {
       });
     return this.running;
   }
+  private async reconcile(): Promise<PersistentSessionReconcileResult> {
+    const result = await this.reconcileHosts(await this.listHosts());
+    // Sessions never expire, but ended rows are still pruned after 30 days
+    // so history does not grow without bound.
+    await this.repository.pruneEndedOlderThan(
+      new Date(this.now().getTime() - 30 * 24 * 60 * 60 * 1000).toISOString(),
+    );
+    return result;
+  }
 
   async reconcileHosts(
     hosts: PersistentSessionHost[],
@@ -176,13 +185,9 @@ export class PersistentSessionReconciler {
             }
             continue;
           }
-          const expirySeconds =
-            observed.marker.expiryMode === "idle"
-              ? (observed.marker.expirySeconds ?? null)
-              : null;
           const createdAt =
             observed.marker.createdAt || observed.createdAt || timestamp;
-          const recovered = await this.repository.create(
+          await this.repository.create(
             {
               id: observed.marker.id,
               userId: hostInfo.userId,
@@ -190,27 +195,14 @@ export class PersistentSessionReconciler {
               displayName: observed.name,
               tmuxSessionName: observed.name,
               managementState: "managed",
-              expiryMode: observed.marker.expiryMode,
-              expirySeconds,
+              // Sessions never expire, so recovered rows are always manual
+              // regardless of what a legacy remote marker claimed.
+              expiryMode: "manual",
+              expirySeconds: null,
               remoteCreatedAt: createdAt,
             },
             "recovered",
           );
-          if (expirySeconds && observed.attachedClients === 0) {
-            const basis = observed.activityAt
-              ? Number(observed.activityAt) * 1000
-              : this.now().getTime();
-            const safeBasis =
-              Number.isFinite(basis) && basis > 0
-                ? basis
-                : this.now().getTime();
-            await this.repository.update(recovered.id, hostInfo.userId, {
-              expiresAt: new Date(
-                safeBasis + expirySeconds * 1000,
-              ).toISOString(),
-              lastObservedAt: timestamp,
-            });
-          }
           result.recovered++;
         }
       }
@@ -219,8 +211,5 @@ export class PersistentSessionReconciler {
       Array.from({ length: Math.min(4, hosts.length) }, () => worker()),
     );
     return result;
-  }
-  private async reconcile(): Promise<PersistentSessionReconcileResult> {
-    return this.reconcileHosts(await this.listHosts());
   }
 }

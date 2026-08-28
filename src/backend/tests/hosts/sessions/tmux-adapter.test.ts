@@ -11,13 +11,13 @@ describe("persistent tmux adapter", () => {
     name: "safe-session",
     id: "session-id",
     createdAt: "2026-08-26T00:00:00.000Z",
-    expiryMode: "idle" as const,
-    expirySeconds: 300,
+    expiryMode: "manual" as const,
   };
   it("builds the create command without a working directory", () => {
     const command = buildPersistentTmuxCreateCommand(input);
     expect(command).toContain("tmux new-session -d -s 'safe-session'");
     expect(command).not.toContain(" -c ");
+    expect(command).not.toContain("@termix_expiry_seconds");
   });
   it("requires marker equality and confirms kill", () => {
     const command = buildPersistentTmuxKillCommand(input.name, input.id);

@@ -1,4 +1,4 @@
-import { and, desc, eq, isNull, lt, lte } from "drizzle-orm";
+import { and, desc, eq, isNull, lt } from "drizzle-orm";
 import { persistentSessionEvents, persistentSessions } from "../db/schema.js";
 import type { DatabaseContext } from "./database-context.js";
 import { insertReturning } from "./returning.js";
@@ -195,19 +195,6 @@ export class PersistentSessionRepository {
       .values({ sessionId: id, eventType: reason, actorId: userId });
     await this.afterWrite();
     return this.findByIdForUser(id, userId);
-  }
-
-  async listDueExpiry(now: string): Promise<PersistentSessionRecord[]> {
-    return this.context.drizzle
-      .select()
-      .from(persistentSessions)
-      .where(
-        and(
-          eq(persistentSessions.expiryMode, "idle"),
-          isNull(persistentSessions.endedAt),
-          lte(persistentSessions.expiresAt, now),
-        ),
-      );
   }
 
   async pruneEndedOlderThan(cutoff: string): Promise<void> {

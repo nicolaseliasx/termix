@@ -1,7 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { PersistentSessionLifecycleService } from "../../../hosts/sessions/lifecycle.js";
 import { PersistentSessionError } from "../../../hosts/sessions/errors.js";
-import { DEFAULT_IDLE_EXPIRY_SECONDS } from "../../../hosts/sessions/types.js";
 import type { PersistentSessionGateway } from "../../../hosts/sessions/gateway.js";
 import type { PersistentSessionRepository } from "../../../database/repositories/persistent-session-repository.js";
 
@@ -77,9 +76,10 @@ describe("PersistentSessionLifecycleService", () => {
     });
     expect(ended).toBe(false);
   });
-  it("defaults a create without expiry input to idle six hours", async () => {
+  it("creates sessions that never expire", async () => {
     const created: Array<Record<string, unknown>> = [];
     const gatewayCreates: Array<Record<string, unknown>> = [];
+    const updates: Array<Record<string, unknown>> = [];
     let createdId = "";
     const repository = {
       findActiveByHostAndTmux: async () => null,
@@ -91,7 +91,10 @@ describe("PersistentSessionLifecycleService", () => {
         _id: string,
         _userId: string,
         patch: Record<string, unknown>,
-      ) => ({ ...patch }),
+      ) => {
+        updates.push(patch);
+        return patch;
+      },
     } as unknown as PersistentSessionRepository;
     const gateway = {
       create: async (
@@ -105,7 +108,7 @@ describe("PersistentSessionLifecycleService", () => {
         {
           name: "session",
           attachedClients: 0,
-          marker: { id: createdId, createdAt: "now", expiryMode: "idle" },
+          marker: { id: createdId, createdAt: "now", expiryMode: "manual" },
         },
       ],
       mark: async () => {},
@@ -117,19 +120,17 @@ describe("PersistentSessionLifecycleService", () => {
       gateway,
       async () => host,
     );
-    await service.create("owner", {
+    const record = await service.create("owner", {
       hostId: 1,
       displayName: "Session",
       tmuxSessionName: "session",
     });
-    expect(DEFAULT_IDLE_EXPIRY_SECONDS).toBe(6 * 60 * 60);
-    expect(gatewayCreates[0]).toMatchObject({
-      expiryMode: "idle",
-      expirySeconds: DEFAULT_IDLE_EXPIRY_SECONDS,
-    });
+    expect(gatewayCreates[0]).toMatchObject({ expiryMode: "manual" });
     expect(created[0]).toMatchObject({
-      expiryMode: "idle",
-      expirySeconds: DEFAULT_IDLE_EXPIRY_SECONDS,
+      expiryMode: "manual",
+      expirySeconds: null,
     });
+    expect(record.expiresAt).toBeNull();
+    expect(updates).toHaveLength(0);
   });
 });

@@ -123,8 +123,6 @@ export async function patchPersistentSession(
   input: Partial<{
     displayName: string;
     tmuxSessionName: string;
-    expiryMode: "manual" | "idle";
-    expirySeconds: number;
   }>,
 ): Promise<PersistentSession> {
   try {

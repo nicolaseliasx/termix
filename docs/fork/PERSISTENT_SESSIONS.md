@@ -24,12 +24,10 @@ At backend readiness, maintenance starts reconciliation immediately and then
 continues at a one-minute cadence. Reconciliation has at most four concurrent
 hosts and never kills tmux: an unavailable host is offline, a missing session
 is ended only after a successful list, marker-only sessions are recovered, and
-unmarked tmux sessions are automatically adopted with a verified Termix marker
-and manual expiry. The authenticated global reconciliation endpoint returns
-per-host online/offline results for the Sessions UI.
-Expiry re-reads both durable state and tmux, postpones while any tmux client is
-attached, requires the exact marker before the existing guarded kill command,
-and keeps ended rows/events only for 30 days. Shutdown clears all timers.
+unmarked tmux sessions are automatically adopted with a verified Termix marker.
+Sessions never expire — they run until manually terminated; a startup
+migration converts any legacy idle rows to manual, and ended rows/events are
+kept only for 30 days before pruning. Shutdown clears all timers.
 
 ## Deployment verification
 

@@ -275,10 +275,7 @@ export function SessionsPanel({
                         : offline
                           ? "offline"
                           : "running"}{" "}
-                      · {formatRuntime(session.createdAt)} ·{" "}
-                      {session.expiryMode === "manual"
-                        ? "manual expiry"
-                        : `expires ${session.expiresAt ? new Date(session.expiresAt).toLocaleString() : "after detach"}`}
+                      · {formatRuntime(session.createdAt)}
                     </p>
                     <div className="mt-3 flex flex-wrap gap-2">
                       <Button
