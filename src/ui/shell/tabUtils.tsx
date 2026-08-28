@@ -38,7 +38,6 @@ import type {
 } from "@/features/terminal/Terminal";
 import type { GuacamoleAppHandle } from "@/features/guacamole/GuacamoleApp";
 import { useIsMobile } from "@/hooks/use-mobile";
-import { FEATURES } from "@/lib/features";
 import type { Tab, TabType, Host } from "@/types/ui-types";
 import type { SSHHost } from "@/types";
 import { useTabsSafe } from "@/shell/TabContext";
@@ -72,12 +71,14 @@ const loadFileManager = () =>
   import("@/features/file-manager/FileManager").then((m) => ({
     default: m.FileManager,
   }));
-const FileManager = FEATURES.sftp === true ? lazy(loadFileManager) : null;
+const FileManager = __TERMIX_FEATURE_SFTP__ ? lazy(loadFileManager) : null;
 const loadDockerManager = () =>
   import("@/features/docker/DockerManager").then((m) => ({
     default: m.DockerManager,
   }));
-const DockerManager = FEATURES.docker === true ? lazy(loadDockerManager) : null;
+const DockerManager = __TERMIX_FEATURE_DOCKER__
+  ? lazy(loadDockerManager)
+  : null;
 const loadHostMetricsTab = () =>
   import("@/features/host-metrics/HostMetricsTab").then((m) => ({
     default: m.HostMetricsTab,
@@ -141,23 +142,37 @@ const SessionLogsPanel = lazy(() =>
     default: m.SessionLogsPanel,
   })),
 );
-const SnippetsPanel = lazy(() =>
-  import("@/sidebar/SnippetsPanel").then((m) => ({ default: m.SnippetsPanel })),
-);
-const MacrosPanel = lazy(() =>
-  import("@/sidebar/MacrosPanel").then((m) => ({ default: m.MacrosPanel })),
-);
-const HistoryPanel = lazy(() =>
-  import("@/sidebar/HistoryPanel").then((m) => ({ default: m.HistoryPanel })),
-);
+const SnippetsPanel = __TERMIX_FEATURE_SNIPPETS__
+  ? lazy(() =>
+      import("@/sidebar/SnippetsPanel").then((m) => ({
+        default: m.SnippetsPanel,
+      })),
+    )
+  : null;
+const MacrosPanel = __TERMIX_FEATURE_MACROS__
+  ? lazy(() =>
+      import("@/sidebar/MacrosPanel").then((m) => ({
+        default: m.MacrosPanel,
+      })),
+    )
+  : null;
+const HistoryPanel = __TERMIX_FEATURE_HISTORY__
+  ? lazy(() =>
+      import("@/sidebar/HistoryPanel").then((m) => ({
+        default: m.HistoryPanel,
+      })),
+    )
+  : null;
 const SshToolsPanel = lazy(() =>
   import("@/sidebar/SshToolsPanel").then((m) => ({ default: m.SshToolsPanel })),
 );
-const AutomationsPanel = lazy(() =>
-  import("@/sidebar/AutomationsPanel").then((m) => ({
-    default: m.AutomationsPanel,
-  })),
-);
+const AutomationsPanel = __TERMIX_FEATURE_AUTOMATIONS_PANEL__
+  ? lazy(() =>
+      import("@/sidebar/AutomationsPanel").then((m) => ({
+        default: m.AutomationsPanel,
+      })),
+    )
+  : null;
 
 const AiPanel = lazy(() =>
   import("@/features/ai/AiPanel").then((m) => ({
@@ -167,8 +182,8 @@ const AiPanel = lazy(() =>
 
 const tabSurfaceLoaders: Partial<Record<TabType, () => Promise<unknown>>> = {
   terminal: loadTerminalFeature,
-  ...(FEATURES.sftp === true ? { files: loadFileManager } : {}),
-  ...(FEATURES.docker === true ? { docker: loadDockerManager } : {}),
+  ...(__TERMIX_FEATURE_SFTP__ ? { files: loadFileManager } : {}),
+  ...(__TERMIX_FEATURE_DOCKER__ ? { docker: loadDockerManager } : {}),
   "host-metrics": loadHostMetricsTab,
   "proxmox-stats": loadProxmoxStatsTab,
   tmux_monitor: loadTmuxMonitor,
@@ -383,6 +398,11 @@ function TerminalTabContent({
                 restoredSessionId: tab.restoredSessionId ?? null,
                 joinSharedSessionId: tab.joinSharedSessionId ?? null,
                 joinShareId: tab.joinShareId ?? null,
+                persistentSessionId: tab.persistentSessionId ?? null,
+                persistentClientId:
+                  tab.persistentClientId ?? tab.instanceId ?? tab.id,
+                persistentRole: tab.persistentRole ?? "writer",
+                persistentTakeover: tab.persistentTakeover ?? false,
               } as TerminalHostConfig
             }
             isVisible={isVisible}

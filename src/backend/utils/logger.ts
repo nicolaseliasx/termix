@@ -65,15 +65,13 @@ const TRUNCATE_FIELDS = ["data", "content", "body", "response", "request"];
 
 export class Logger {
   private serviceName: string;
-  private serviceIcon: string;
   private serviceColor: string;
   private logCounts = new Map<string, { count: number; lastLog: number }>();
   private readonly RATE_LIMIT_WINDOW = 60000;
   private readonly RATE_LIMIT_MAX = 10;
 
-  constructor(serviceName: string, serviceIcon: string, serviceColor: string) {
+  constructor(serviceName: string, serviceColor: string) {
     this.serviceName = serviceName;
-    this.serviceIcon = serviceIcon;
     this.serviceColor = serviceColor;
   }
 
@@ -129,7 +127,7 @@ export class Logger {
   ): string {
     const timestamp = this.getTimeStamp();
     const levelColor = this.getLevelColor(level);
-    const serviceTag = chalk.hex(this.serviceColor)(`[${this.serviceIcon}]`);
+    const serviceTag = chalk.hex(this.serviceColor)(`[${this.serviceName}]`);
     const levelTag = levelColor(`[${level.toUpperCase()}]`);
 
     let contextStr = "";
@@ -297,17 +295,17 @@ export class Logger {
   }
 }
 
-export const databaseLogger = new Logger("DATABASE", "🗄️", "#6366f1");
-export const sshLogger = new Logger("SSH", "🖥️", "#0ea5e9");
-export const tunnelLogger = new Logger("TUNNEL", "📡", "#a855f7");
-export const fileLogger = new Logger("FILE", "📁", "#f59e0b");
-export const statsLogger = new Logger("STATS", "📊", "#22c55e");
-export const apiLogger = new Logger("API", "🌐", "#3b82f6");
-export const authLogger = new Logger("AUTH", "🔐", "#ef4444");
-export const systemLogger = new Logger("SYSTEM", "🚀", "#14b8a6");
-export const versionLogger = new Logger("VERSION", "📦", "#8b5cf6");
-export const dashboardLogger = new Logger("DASHBOARD", "📊", "#ec4899");
-export const guacLogger = new Logger("GUACAMOLE", "🖼️", "#ff6b6b");
-export const homepageLogger = new Logger("HOMEPAGE", "🏠", "#f97316");
+export const databaseLogger = new Logger("DATABASE", "#6366f1");
+export const sshLogger = new Logger("SSH", "#0ea5e9");
+export const tunnelLogger = new Logger("TUNNEL", "#a855f7");
+export const fileLogger = new Logger("FILE", "#f59e0b");
+export const statsLogger = new Logger("STATS", "#22c55e");
+export const apiLogger = new Logger("API", "#3b82f6");
+export const authLogger = new Logger("AUTH", "#ef4444");
+export const systemLogger = new Logger("SYSTEM", "#14b8a6");
+export const versionLogger = new Logger("VERSION", "#8b5cf6");
+export const dashboardLogger = new Logger("DASHBOARD", "#ec4899");
+export const guacLogger = new Logger("GUACAMOLE", "#ff6b6b");
+export const homepageLogger = new Logger("HOMEPAGE", "#f97316");
 
 export const logger = systemLogger;

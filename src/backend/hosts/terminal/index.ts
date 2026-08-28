@@ -37,6 +37,11 @@ import {
   isMessageAllowedForParticipant,
 } from "./session-manager.js";
 import {
+  persistentAttachmentManager,
+  PersistentAttachmentError,
+  type PersistentAttachment,
+} from "../sessions/persistent-attachment-manager.js";
+import {
   createCurrentSessionShareRepository,
   createCurrentSettingsRepository,
 } from "../../database/repositories/factory.js";
@@ -129,6 +134,11 @@ const userConnections = new Map<string, Set<WebSocket>>();
 
 const wss = new WebSocketServer({
   port: 30002,
+});
+wss.on("close", () => {
+  // Browser bridges are disposable. Persistent tmux sessions live remotely and
+  // must never be killed as part of WebSocket server shutdown.
+  persistentAttachmentManager.shutdown();
 });
 
 wss.on("error", (error) => {
@@ -369,7 +379,30 @@ wss.on("connection", async (ws: WebSocket, req) => {
     userId,
   });
 
+  // TEMP DIAGNOSTIC: log every outbound control message type so stalled
+  // terminal connections (e.g. waiting on an invisible auth prompt) are
+  // visible in backend logs. Binary/stream frames are not logged.
+  const rawWsSend = ws.send.bind(ws);
+  ws.send = ((data: unknown, cb?: (err?: Error) => void) => {
+    if (typeof data === "string") {
+      try {
+        const parsed = JSON.parse(data) as { type?: unknown };
+        if (typeof parsed.type === "string") {
+          sshLogger.info(`WS-> client ${parsed.type}`, {
+            operation: "terminal_ws_send",
+            sessionId,
+            userId,
+          });
+        }
+      } catch {
+        // non-JSON frame - ignore
+      }
+    }
+    return rawWsSend(data as never, cb as never);
+  }) as typeof ws.send;
+
   let currentSessionId: string | null = null;
+  let persistentAttachment: PersistentAttachment | null = null;
   let sshConn: SSHClientType | null = null;
   let sshStream: ClientChannel | null = null;
   let lastJumpClient: SSHClientType | null = null;
@@ -450,6 +483,13 @@ wss.on("connection", async (ws: WebSocket, req) => {
         currentSessionId = null;
       }
     }
+    if (persistentAttachment) {
+      persistentAttachmentManager.detach(
+        persistentAttachment.persistentSessionId,
+        persistentAttachment.clientId,
+      );
+      persistentAttachment = null;
+    }
     cleanupAuthState();
   });
 
@@ -508,6 +548,119 @@ wss.on("connection", async (ws: WebSocket, req) => {
 
     try {
       switch (type) {
+        case "persistent_attach": {
+          if (currentSessionId || sshConn || persistentAttachment) {
+            ws.send(
+              JSON.stringify({
+                type: "persistent_error",
+                code: "PERSISTENT_SESSION_DUPLICATE_CLIENT",
+                message: "This connection is already attached",
+              }),
+            );
+            break;
+          }
+          const attachData = asObject(data);
+          try {
+            persistentAttachment = await persistentAttachmentManager.attach({
+              persistentSessionId:
+                asString(attachData.persistentSessionId) ?? "",
+              clientId: asString(attachData.clientId),
+              role: asString(attachData.role) as
+                "writer" | "viewer" | undefined,
+              userId: userId!,
+              socket: ws,
+              cols: toTerminalDimension(attachData.cols) ?? 80,
+              rows: toTerminalDimension(attachData.rows) ?? 24,
+            });
+            ws.send(
+              JSON.stringify({
+                type: "persistent_attached",
+                persistentSessionId: persistentAttachment.persistentSessionId,
+                clientId: persistentAttachment.clientId,
+                role: persistentAttachment.role,
+              }),
+            );
+          } catch (error) {
+            const persistentError =
+              error instanceof PersistentAttachmentError
+                ? error
+                : new PersistentAttachmentError(
+                    "PERSISTENT_SESSION_CONNECT_FAILED",
+                    "Unable to attach persistent session",
+                  );
+            ws.send(
+              JSON.stringify({
+                type: "persistent_error",
+                code: persistentError.code,
+                message: persistentError.message,
+              }),
+            );
+          }
+          break;
+        }
+
+        case "persistent_detach": {
+          if (persistentAttachment) {
+            persistentAttachmentManager.detach(
+              persistentAttachment.persistentSessionId,
+              persistentAttachment.clientId,
+            );
+            ws.send(
+              JSON.stringify({
+                type: "persistent_detached",
+                persistentSessionId: persistentAttachment.persistentSessionId,
+                clientId: persistentAttachment.clientId,
+              }),
+            );
+            persistentAttachment = null;
+          }
+          break;
+        }
+
+        case "persistent_take_control": {
+          if (!persistentAttachment) {
+            ws.send(
+              JSON.stringify({
+                type: "persistent_error",
+                code: "PERSISTENT_SESSION_NOT_ATTACHED",
+                message: "Attach this device before taking control",
+              }),
+            );
+            break;
+          }
+          try {
+            const change = await persistentAttachmentManager.takeControl(
+              persistentAttachment.persistentSessionId,
+              persistentAttachment.clientId,
+            );
+            persistentAttachment = { ...persistentAttachment, role: "writer" };
+            ws.send(
+              JSON.stringify({
+                type: "persistent_control_changed",
+                persistentSessionId: persistentAttachment.persistentSessionId,
+                clientId: persistentAttachment.clientId,
+                oldWriterClientId: change.oldWriter,
+              }),
+            );
+          } catch (error) {
+            const persistentError =
+              error instanceof PersistentAttachmentError
+                ? error
+                : new PersistentAttachmentError(
+                    "PERSISTENT_SESSION_CONNECT_FAILED",
+                    "Unable to take control",
+                  );
+            ws.send(
+              JSON.stringify({
+                type: "persistent_error",
+                code: persistentError.code,
+                message: persistentError.message,
+              }),
+            );
+          }
+          break;
+        }
+
         case "connectToHost": {
           const connectData = data as ConnectToHostData;
           if (!connectData?.hostConfig) {
@@ -662,11 +815,38 @@ wss.on("connection", async (ws: WebSocket, req) => {
 
         case "resize": {
           const resizeData = data as ResizeData;
+          if (persistentAttachment) {
+            const cols = toTerminalDimension(resizeData?.cols);
+            const rows = toTerminalDimension(resizeData?.rows);
+            if (cols && rows)
+              persistentAttachmentManager.resize(
+                persistentAttachment.persistentSessionId,
+                persistentAttachment.clientId,
+                cols,
+                rows,
+              );
+            break;
+          }
           handleResize(resizeData);
           break;
         }
 
         case "disconnect": {
+          if (persistentAttachment) {
+            persistentAttachmentManager.detach(
+              persistentAttachment.persistentSessionId,
+              persistentAttachment.clientId,
+            );
+            ws.send(
+              JSON.stringify({
+                type: "persistent_detached",
+                persistentSessionId: persistentAttachment.persistentSessionId,
+                clientId: persistentAttachment.clientId,
+              }),
+            );
+            persistentAttachment = null;
+            break;
+          }
           const disconnectSession = currentSessionId
             ? sessionManager.getSession(currentSessionId)
             : null;
@@ -767,6 +947,24 @@ wss.on("connection", async (ws: WebSocket, req) => {
         case "input": {
           if (typeof data !== "string") break;
           const inputData = data;
+          if (persistentAttachment) {
+            if (
+              !persistentAttachmentManager.write(
+                persistentAttachment.persistentSessionId,
+                persistentAttachment.clientId,
+                inputData,
+              )
+            ) {
+              ws.send(
+                JSON.stringify({
+                  type: "persistent_error",
+                  code: "PERSISTENT_SESSION_READ_ONLY",
+                  message: "This device is read-only",
+                }),
+              );
+            }
+            break;
+          }
           if (currentSessionId) {
             sessionManager.bufferInput(currentSessionId, inputData);
           }

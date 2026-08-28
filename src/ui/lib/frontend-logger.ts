@@ -22,13 +22,11 @@ export interface LogContext {
 
 class FrontendLogger {
   private serviceName: string;
-  private serviceIcon: string;
   private serviceColor: string;
   private isDevelopment: boolean;
 
-  constructor(serviceName: string, serviceIcon: string, serviceColor: string) {
+  constructor(serviceName: string, serviceColor: string) {
     this.serviceName = serviceName;
-    this.serviceIcon = serviceIcon;
     this.serviceColor = serviceColor;
     this.isDevelopment = process.env.NODE_ENV === "development";
   }
@@ -68,18 +66,11 @@ class FrontendLogger {
   }
 
   private getLevelTag(level: LogLevel): string {
-    const symbols = {
-      debug: "🔍",
-      info: "ℹ️",
-      warn: "⚠️",
-      error: "❌",
-      success: "✅",
-    };
-    return `${symbols[level]} [${level.toUpperCase()}]`;
+    return `[${level.toUpperCase()}]`;
   }
 
   private getServiceTag(): string {
-    return `${this.serviceIcon} [${this.serviceName}]`;
+    return `[${this.serviceName}]`;
   }
 
   private shouldLog(level: LogLevel): boolean {
@@ -202,7 +193,7 @@ class FrontendLogger {
     const cleanUrl = this.sanitizeUrl(url);
     const shortUrl = this.getShortUrl(cleanUrl);
 
-    console.group(`🚀 ${method.toUpperCase()} ${shortUrl}`);
+    console.group(`${method.toUpperCase()} ${shortUrl}`);
     this.request(`→ Starting request to ${cleanUrl}`, {
       ...context,
       method: method.toUpperCase(),
@@ -218,19 +209,14 @@ class FrontendLogger {
     context?: LogContext,
   ): void {
     const cleanUrl = this.sanitizeUrl(url);
-    const statusIcon = this.getStatusIcon(status);
-    const performanceIcon = this.getPerformanceIcon(responseTime);
 
-    this.response(
-      `← ${statusIcon} ${status} ${performanceIcon} ${responseTime}ms`,
-      {
-        ...context,
-        method: method.toUpperCase(),
-        url: cleanUrl,
-        status,
-        responseTime,
-      },
-    );
+    this.response(`← ${status} ${responseTime}ms`, {
+      ...context,
+      method: method.toUpperCase(),
+      url: cleanUrl,
+      status,
+      responseTime,
+    });
     console.groupEnd();
   }
 
@@ -243,9 +229,8 @@ class FrontendLogger {
     context?: LogContext,
   ): void {
     const cleanUrl = this.sanitizeUrl(url);
-    const statusIcon = this.getStatusIcon(status);
 
-    this.error(`← ${statusIcon} ${status} ${errorMessage}`, undefined, {
+    this.error(`← ${status} ${errorMessage}`, undefined, {
       ...context,
       method: method.toUpperCase(),
       url: cleanUrl,
@@ -264,7 +249,7 @@ class FrontendLogger {
   ): void {
     const cleanUrl = this.sanitizeUrl(url);
 
-    this.error(`🌐 Network Error: ${errorMessage}`, undefined, {
+    this.error(`Network Error: ${errorMessage}`, undefined, {
       ...context,
       method: method.toUpperCase(),
       url: cleanUrl,
@@ -277,7 +262,7 @@ class FrontendLogger {
   authError(method: string, url: string, context?: LogContext): void {
     const cleanUrl = this.sanitizeUrl(url);
 
-    this.security(`🔐 Authentication Required`, {
+    this.security(`Authentication Required`, {
       ...context,
       method: method.toUpperCase(),
       url: cleanUrl,
@@ -295,7 +280,7 @@ class FrontendLogger {
   ): void {
     const cleanUrl = this.sanitizeUrl(url);
 
-    this.retry(`🔄 Retry ${attempt}/${maxAttempts}`, {
+    this.retry(`Retry ${attempt}/${maxAttempts}`, {
       ...context,
       method: method.toUpperCase(),
       url: cleanUrl,
@@ -304,7 +289,7 @@ class FrontendLogger {
   }
 
   apiOperation(operation: string, details: string, context?: LogContext): void {
-    this.info(`🔧 ${operation}: ${details}`, {
+    this.info(`${operation}: ${details}`, {
       ...context,
       operation: "api_operation",
     });
@@ -319,11 +304,9 @@ class FrontendLogger {
   ): void {
     const cleanUrl = this.sanitizeUrl(url);
     const shortUrl = this.getShortUrl(cleanUrl);
-    const statusIcon = this.getStatusIcon(status);
-    const performanceIcon = this.getPerformanceIcon(responseTime);
 
     console.log(
-      `%c📊 ${method} ${shortUrl} ${statusIcon} ${status} ${performanceIcon} ${responseTime}ms`,
+      `%c${method} ${shortUrl} ${status} ${responseTime}ms`,
       "color: #666; font-style: italic; font-size: 0.9em;",
       context,
     );
@@ -338,22 +321,6 @@ class FrontendLogger {
     } catch {
       return url.length > 50 ? url.substring(0, 47) + "..." : url;
     }
-  }
-
-  private getStatusIcon(status: number): string {
-    if (status >= 200 && status < 300) return "✅";
-    if (status >= 300 && status < 400) return "↩️";
-    if (status >= 400 && status < 500) return "⚠️";
-    if (status >= 500) return "❌";
-    return "❓";
-  }
-
-  private getPerformanceIcon(responseTime: number): string {
-    if (responseTime < 100) return "⚡";
-    if (responseTime < 500) return "🚀";
-    if (responseTime < 1000) return "🏃";
-    if (responseTime < 3000) return "🚶";
-    return "🐌";
   }
 
   private sanitizeUrl(url: string): string {
@@ -372,13 +339,13 @@ class FrontendLogger {
   }
 }
 
-export const apiLogger = new FrontendLogger("API", "🌐", "#3b82f6");
-export const authLogger = new FrontendLogger("AUTH", "🔐", "#dc2626");
-export const sshLogger = new FrontendLogger("SSH", "🖥️", "#1e3a8a");
-export const tunnelLogger = new FrontendLogger("TUNNEL", "📡", "#1e3a8a");
-export const fileLogger = new FrontendLogger("FILE", "📁", "#1e3a8a");
-export const statsLogger = new FrontendLogger("STATS", "📊", "#22c55e");
-export const systemLogger = new FrontendLogger("SYSTEM", "🚀", "#1e3a8a");
-export const dashboardLogger = new FrontendLogger("DASHBOARD", "📊", "#ec4899");
+export const apiLogger = new FrontendLogger("API", "#3b82f6");
+export const authLogger = new FrontendLogger("AUTH", "#dc2626");
+export const sshLogger = new FrontendLogger("SSH", "#1e3a8a");
+export const tunnelLogger = new FrontendLogger("TUNNEL", "#1e3a8a");
+export const fileLogger = new FrontendLogger("FILE", "#1e3a8a");
+export const statsLogger = new FrontendLogger("STATS", "#22c55e");
+export const systemLogger = new FrontendLogger("SYSTEM", "#1e3a8a");
+export const dashboardLogger = new FrontendLogger("DASHBOARD", "#ec4899");
 
 export const logger = systemLogger;

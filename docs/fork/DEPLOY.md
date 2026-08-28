@@ -40,3 +40,42 @@ Relevant diff (see commit `chore(fork): local theme, SSL SAN for IP domain and c
 
 - HTTPS is local self-signed (browser warning expected); access is LAN-only today.
 - Future: expose via Tailscale (planned for a later phase; no work done yet).
+
+## Persistent-sessions deployment validation (2026-08-26)
+
+- The web proxy explicitly forwards `/api/v1/` to the authenticated backend;
+  this is required for the Sessions UI.
+- Latest verified backup: `/home/admin/termix/backups/termix-data-20260826-120038.tar.gz`.
+  It is a read-only-volume tar archive, verified with `tar -tzf`, owned by
+  `admin:admin` and mode `0640`.
+- Rollback image: `docker-termix:rollback-20260826-120038`. To roll back the
+  application image without touching the data volume:
+
+  ```sh
+  docker tag docker-termix:rollback-20260826-120038 docker-termix:latest
+  docker compose -f docker/docker-compose.local.yml up -d --no-build termix
+  ```
+
+- The current image passed health on `30001`, HTTPS/UI on `8443`, the Sessions
+  asset check, and unauthenticated `/api/v1/persistent-sessions` returns `401`.
+
+## Sessions layout and reconciliation deployment (2026-08-26)
+
+- Backup: `/home/admin/termix/backups/termix-data-20260826-174225.tar.gz`
+  (`sha256:b64364044e94a320b1b84d4eea14275101d5cc696d26a559c4b4489d6e911e86`,
+  `admin:admin`, mode `0640`).
+- Deployed image: `docker-termix:candidate-20260826-174225`
+  (`sha256:5591d09ae9b8981bd2c16c66a280a9755c820b8308995e5ac96e46868c5ed19e`).
+- Rollback image: `docker-termix:rollback-20260826-174225` (the image that was
+  running immediately before this deploy). To roll back without altering the
+  data volume:
+
+  ```sh
+  docker tag docker-termix:rollback-20260826-174225 docker-termix:latest
+  docker compose -f docker/docker-compose.local.yml up -d --no-build termix
+  ```
+
+- The candidate was smoke-tested with a fresh temporary data directory; the
+  production container then passed Docker health, backend health (`30001`),
+  HTTP (`8080`), HTTPS (`8443`), Sessions asset discovery, and the unauthenticated
+  persistent-sessions `401` boundary.

@@ -27,12 +27,14 @@ import uiPreferencesRoutes from "./routes/ui-preferences.js";
 import proxmoxRoutes from "./routes/proxmox.js";
 import termixIdRoutes from "./routes/termix-id.js";
 import { registerAuditLogRoutes } from "./routes/audit-log-routes.js";
+import { isFeatureEnabled } from "../utils/features.js";
 import { registerTailscaleRoutes } from "./routes/tailscale-routes.js";
 import vaultRoutes from "./routes/vault.js";
 import alertRulesRoutes from "./routes/alert-rules-routes.js";
 import aiRoutes from "../ai/index.js";
 import automationsRoutes from "./routes/automations.js";
 import syncRoutes from "./routes/sync.js";
+import persistentSessionRoutes from "./routes/persistent-sessions.js";
 import { createCorsMiddleware } from "../utils/cors-config.js";
 import { createCompressionMiddleware } from "../utils/compression-config.js";
 import fs from "fs";
@@ -1745,7 +1747,9 @@ app.use("/users", userRoutes);
 app.use("/host", hostRoutes);
 app.use("/alerts", alertRoutes);
 app.use("/credentials", credentialsRoutes);
-app.use("/snippets", snippetsRoutes);
+if (isFeatureEnabled("SNIPPETS")) {
+  app.use("/snippets", snippetsRoutes);
+}
 app.use("/fleets", fleetRoutes);
 app.use("/workspaces", workspaceRoutes);
 app.use("/c2s-tunnel-presets", c2sTunnelPresetRoutes);
@@ -1762,15 +1766,25 @@ app.use("/credential-sidebar/preferences", credentialSidebarPreferencesRoutes);
 app.use("/ui-preferences", uiPreferencesRoutes);
 app.use("/proxmox", proxmoxRoutes);
 app.use("/termix-id", termixIdRoutes);
-registerAuditLogRoutes(app, authenticateJWT);
+// Advanced audit: HTTP routes for browsing audit logs. The internal
+// audit-log recording middleware below stays active regardless (core).
+if (isFeatureEnabled("ADVANCED_AUDIT")) {
+  registerAuditLogRoutes(app, authenticateJWT);
+}
 registerTailscaleRoutes(app, authenticateJWT);
 app.use("/vault", vaultRoutes);
+// Automations management UI CRUD. The automation engine, scheduler,
+// triggers and notifications always start (see starter.ts) — they are the
+// motor behind Alerts, which is core. Only the panel API is gated.
 // Before the alert routes, which are mounted at the root and would otherwise
 // have first claim on the path.
-app.use("/automations", automationsRoutes);
+if (isFeatureEnabled("AUTOMATIONS_PANEL")) {
+  app.use("/automations", automationsRoutes);
+}
 app.use("/ai", aiRoutes);
 app.use("/", alertRulesRoutes);
 app.use("/sync", syncRoutes);
+app.use("/api/v1", persistentSessionRoutes);
 
 const frontendDistPaths = [
   path.join(__dirname, "../../../dist"),

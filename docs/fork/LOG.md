@@ -122,3 +122,152 @@ wake_on_lan, advanced_audit`. Flags are injected by Vite `define` as
   `NODE_OPTIONS=--max-old-space-size=1400` on the 2GB host; plain run OOMs).
   Bundle evidence recorded after full build in the Validation section below.
 - Revert: revert commit `feat(fork): build-time feature flags for optional frontend features`.
+
+### 2026-08-26 — Phase 1 / T1.2 — Backend boot-time feature flags
+
+- What: added default-off `FEATURE_*` guards for snippets, command-history,
+  advanced-audit, automations CRUD, Wake-on-LAN, SFTP and Docker services.
+- Files: `src/backend/utils/features.ts`, `database.ts`, `terminal.ts`,
+  `host-network-routes.ts`, and `starter.ts`.
+- Revert: remove these guarded registrations/imports; no schema or data migration ran.
+
+### 2026-08-26 — Phase 1 / T1.3 — Manager inventory
+
+- What: documented the Firewall/Package/Cron manager UI, routes, dependencies, and
+  Phase 4 removal verdict; no manager code changed.
+
+## Validation — 2026-08-26
+
+- `NODE_OPTIONS=--max-old-space-size=1400 npm run type-check`: passed.
+- `npm run build:backend` with a 1536 MB heap: passed; output is
+  `dist/backend/backend/starter.js` (not the path stated in the plan).
+- Full Vite build completed, but optional chunks were still emitted (`FileManager`,
+  `DockerManager`, `SnippetsPanel`, `MacrosPanel`, `AutomationsPanel`, and others).
+  The T1.1 static-guard/tree-shaking acceptance criterion therefore remains unmet.
+- Smoke boot and `npx vitest run src/ui/tests` are blocked before application tests by
+  the host dependency/runtime error `webidl.util.markAsUncloneable is not a function`
+  from `undici` under Node v20.19.2. The host lacks `curl`, so HTTP endpoint checks
+
+### 2026-08-26 — Phase 1 closeout
+
+- Test corrections: `rail-items.test.ts` now asserts the default-off feature
+  contract (core rail destinations remain, optional snippets/macros/history/
+  automations/split-screen/workspaces are absent, and derived lists stay
+  consistent). `HostItem.test.tsx` likewise expects Wake-on-LAN to be absent by
+  default and uses the core Tunnel action rather than optional SFTP Files.
+- Node 24.19.0 Docker validation (worktree mounted as UID/GID 1001): targeted
+  rail test passed (16/16); corrected HostItem test passed (15/15). The affected
+  shell/sidebar run passed after those stale default-on expectations were fixed;
+  it emitted existing React `act(...)` warnings only.
+- Backend build used Node 24 with `NODE_OPTIONS=--max-old-space-size=1536` and
+  produced `dist/backend/backend/starter.js`.
+- Isolated backend smoke used container `termix-phase1-smoke`, Node 24,
+  read-only worktree mount, `DATA_DIR=/tmp/termix-phase1-smoke-data`, host port
+  `18091` mapped to the actual hard-coded backend port `30001`, and every
+  `FEATURE_*` value explicitly `false`. `GET /users/setup-required` returned
+  `200 {"setup_required":true}`. `GET /snippets` returned `401` before route
+  resolution because global auth covers the `/snippets` path (see
+  `src/backend/utils/auth-manager.ts`); this is the documented permitted
+  alternative to 404. Startup had no disabled SFTP/Docker/optional-service
+  errors. The smoke container was removed; production `termix` remained healthy.
+- Bundle evidence: prior Node 24 builds established that the core profile omits
+  named optional chunks, snippets-only restores `SnippetsPanel-*.js`, and the
+  final `dist/` was restored to the core build. The executor intentionally made
+  no commit, push, staging action, or production-container change.
+- Manual local commits suggested: `test(fork): align default-off feature tests`;
+  `feat(fork): gate optional backend services and routes`; and
+  `docs(fork): add Phase 1 manager inventory and closeout evidence`.
+- Revert: revert the three Phase 1 changesets, or locally restore the two test
+  files plus backend feature guards; no migration or production data changed.
+
+# Phase 2 Batch 1 (persistent session foundation)
+
+- Added additive, idempotent SQLite runtime tables and canonical/generated Drizzle schemas for persistent session metadata and redacted lifecycle events.
+- Added the owner-scoped persistence repository and safe tmux working-directory validation (`/`, `~`, and `~/…` only).
+- Schema generation/check and Node 24 type-check were run without using production data. WebSocket attachment, scheduled reconciliation/expiry, lifecycle gateway, REST resources, and UI remain Batch 2/3 work.
+- Revert guidance: disable the future consumers first; the additive tables can remain until a separately approved, backed-up forward migration removes them.
+
+### 2026-08-26 — Phase 2 / Task 001 — Persistent session lifecycle REST
+
+- Added the pooled SSH lifecycle gateway, typed redacted public errors,
+  owner-scoped lifecycle service, and authenticated `/api/v1` REST resources.
+- Create/adopt confirm remote markers before persistence; rename/kill require a
+  matching marker and kill verifies removal. Refresh is non-destructive on an
+  unavailable or incomplete remote listing.
+- Files: persistent-session route, repository additions, and
+  `src/backend/hosts/sessions/{errors,gateway,lifecycle,tmux-adapter,index}.ts`.
+- Revert: unmount the route and remove the lifecycle consumers; existing
+  additive persistent-session tables may remain until a separate migration.
+
+### 2026-08-26 — Phase 2 / Task 002 — Persistent session WebSocket bridges
+
+- Added authenticated, owner-scoped persistent-session WebSocket attachment
+  backed by one SSH/PTy per browser device. The first explicit writer gets a
+  normal tmux attach; viewers use `tmux attach-session -r` and server-side
+  input checks reject forged viewer input.
+- Takeover destroys the old writer PTY before promoting the requester, then
+  reconnects the former writer as a viewer. WebSocket close, detach and
+  backend WebSocket shutdown only close local SSH/PTy bridges; none invoke a
+  tmux lifecycle kill.
+- Added future-tab metadata and focused fake-SSH coverage for writer conflict,
+  viewer input, takeover, resize and non-destructive detach.
+- Revert: remove the persistent attachment manager and the terminal protocol
+  branches; remote tmux sessions are unaffected by this integration.
+
+### 2026-08-26 — Phase 2 / Task 003 — Reconciliation and expiry
+
+- Added delayed startup reconciliation (60s, concurrency four, no overlap) and
+  minute-based idle expiry with in-process claims, DB/tmux rechecks, attached
+  postponement, guarded marker verification and thirty-day DB retention.
+- Reconciliation treats SSH failure as offline, recovers marker-only sessions,
+  reports unmarked sessions as discovered, and never issues a tmux kill.
+- Shutdown stops maintenance timers before database persistence. Production was
+  not started or changed during this task.
+
+### 2026-08-26 — Phase 2 / Task 004 — Sessions-first UI
+
+- Added the core Sessions rail destination as the authenticated default on desktop and mobile.
+- Added the persistent-session API client and responsive panel for create, attach, view, takeover, rename, adopt, refresh and guarded remote termination.
+- Persistent terminal tabs now carry the session id, stable client id, role and takeover intent. Closing a tab remains a local WebSocket detach and never calls the lifecycle DELETE endpoint.
+- Production was not changed during this task.
+
+### 2026-08-26 — Phase 2 / Task 005 — Validated deployment
+
+- Node 24.19.0 isolated validation passed: schema check, type-check, targeted
+  persistent-session backend tests (19 tests), affected UI tests, core build,
+  lint, and `git diff --check`. A type-only React import in `SessionsPanel` was
+  corrected during validation.
+- Fixed Docker feature-argument propagation (`FEATURE_*` to the Vite
+  `VITE_FEATURE_*` names), excluded agent state/backups/core dumps from the
+  Docker context, and proxied authenticated `/api/v1/` resources through both
+  HTTP and HTTPS Nginx templates.
+- Recovery point: `/home/admin/termix/backups/termix-data-20260826-120038.tar.gz`
+  (verified with `tar -tzf`, `admin:admin`, mode 0640); rollback image:
+  `docker-termix:rollback-20260826-120038`
+  (`sha256:a1af1b51783760e7b951dfc1a1ff1014a3445c195eb08eedcc2a68df650d9457`).
+- Candidate image was smoke-tested with a fresh temporary data directory, twice
+  through additive migration/startup, health/UI assets, and unauthenticated REST
+  rejection. Production then deployed image
+  `sha256:9710c965be0d06841eba64f2f958ea14cdbdf158ee57652d270548e7edecb607`
+  without volume recreation. Health, HTTPS/UI, published 8080/8443, and the
+  public `/api/v1/persistent-sessions` auth boundary passed.
+- Rollback: `docker tag docker-termix:rollback-20260826-120038 docker-termix:latest && docker compose -f docker/docker-compose.local.yml up -d --no-build termix`.
+
+### 2026-08-26 — Sessions layout and global reconciliation deploy
+
+- Shipped the Sessions UI simplification: square Termix-ID-style cards, a
+  green writer Attach action with tab reuse, a larger terminal navigation icon,
+  and no View/Take control controls in this panel.
+- Shipped user-scoped global reconciliation with four-host concurrency,
+  immediate maintenance startup, automatic verified adoption of unmarked tmux
+  sessions, and per-host offline status for Sessions.
+- Node 24 validation passed schema check, type-check, lint, formatting, core
+  build, and 26 affected backend/UI/API tests. A fresh-data candidate passed
+  health, UI asset, and unauthenticated API checks before production rollout.
+- Recovery point: `/home/admin/termix/backups/termix-data-20260826-174225.tar.gz`
+  (SHA-256 `b64364044e94a320b1b84d4eea14275101d5cc696d26a559c4b4489d6e911e86`);
+  rollback image: `docker-termix:rollback-20260826-174225`.
+- Production now runs image
+  `sha256:5591d09ae9b8981bd2c16c66a280a9755c820b8308995e5ac96e46868c5ed19e`.
+  Docker health, backend health, HTTP, HTTPS, Sessions asset discovery, and
+  the `/api/v1/persistent-sessions` authentication boundary all passed.

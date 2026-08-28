@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it } from "vitest";
 import {
+  FEATURE_RAIL_ITEMS,
   HIDEABLE_RAIL_IDS,
   PROMOTABLE_IDS,
   RAIL_ITEMS,
@@ -39,65 +40,69 @@ describe("RAIL_ITEMS", () => {
     }
   });
 
-  it("keeps the destinations that shipped before the lists were merged", () => {
-    // Guards against a destination silently disappearing now that the rail,
-    // the settings toggles, the sidebar titles and the mobile bar all read
-    // from this one list.
-    expect(RAIL_ITEMS.map((item) => item.id)).toEqual([
-      "hosts",
-      "credentials",
-      "termix-id",
-      "connections",
-      "quick-connect",
-      "serial",
-      "ssh-tools",
+  it("keeps the core destinations in the default build", () => {
+    const defaultIds = FEATURE_RAIL_ITEMS.map((item) => item.id);
+
+    expect(defaultIds).toEqual(
+      expect.arrayContaining([
+        "hosts",
+        "credentials",
+        "termix-id",
+        "connections",
+        "quick-connect",
+        "serial",
+        "ssh-tools",
+        "fleets",
+        "ai",
+        "session-logs",
+        "network_graph",
+      ]),
+    );
+  });
+  it("excludes optional destinations in the default build", () => {
+    const defaultIds = FEATURE_RAIL_ITEMS.map((item) => item.id);
+
+    for (const id of [
       "snippets",
       "macros",
-      "fleets",
-      "automations",
-      "ai",
       "history",
-      "session-logs",
+      "automations",
       "split-screen",
       "workspaces",
-      "local-terminal",
-      "network_graph",
-    ]);
+    ]) {
+      expect(defaultIds, `${id} must be disabled by default`).not.toContain(id);
+    }
   });
 
   it("exposes every rail item as hideable", () => {
-    expect(HIDEABLE_RAIL_IDS).toEqual(RAIL_ITEMS.map((item) => item.id));
+    expect(HIDEABLE_RAIL_IDS).toEqual(
+      FEATURE_RAIL_ITEMS.filter((item) => !item.alwaysVisible).map(
+        (item) => item.id,
+      ),
+    );
   });
 
-  it("marks exactly the four mobile primary slots", () => {
+  it("keeps only enabled mobile-primary destinations", () => {
     expect(
-      RAIL_ITEMS.filter((item) => item.mobilePrimary).map((item) => item.id),
-    ).toEqual(["hosts", "quick-connect", "ssh-tools", "snippets"]);
+      FEATURE_RAIL_ITEMS.filter((item) => item.mobilePrimary).map(
+        (item) => item.id,
+      ),
+    ).toEqual(["sessions", "hosts", "quick-connect", "ssh-tools"]);
   });
 
   it("marks the panels that can open as a tab", () => {
     expect(
-      [...RAIL_ITEMS, ...RAIL_UTILITY_ITEMS]
+      [...FEATURE_RAIL_ITEMS, ...RAIL_UTILITY_ITEMS]
         .filter((item) => item.promotable)
         .map((item) => item.id),
-    ).toEqual([
-      "termix-id",
-      "ssh-tools",
-      "snippets",
-      "macros",
-      "automations",
-      "ai",
-      "history",
-      "session-logs",
-      "alerts",
-    ]);
+    ).toEqual(["termix-id", "ssh-tools", "ai", "session-logs", "alerts"]);
   });
 
   it("derives PROMOTABLE_IDS from the promotable flag", () => {
     // The header button and the hint both gate on this list, so a drift here
     // silently hides the feature for that panel.
     expect(PROMOTABLE_IDS).toEqual(
-      [...RAIL_ITEMS, ...RAIL_UTILITY_ITEMS]
+      [...FEATURE_RAIL_ITEMS, ...RAIL_UTILITY_ITEMS]
         .filter((item) => item.promotable)
         .map((item) => item.id),
     );
@@ -130,10 +135,7 @@ describe("RAIL_ITEMS", () => {
     expect(RIGHT_DOCKABLE_IDS).toEqual([
       "connections",
       "ssh-tools",
-      "snippets",
-      "macros",
       "ai",
-      "history",
       "session-logs",
       "alerts",
     ]);

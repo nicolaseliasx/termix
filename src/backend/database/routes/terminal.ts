@@ -1,4 +1,5 @@
 import { getErrorMessage } from "../../utils/error-message.js";
+import { isFeatureEnabled } from "../../utils/features.js";
 import type { AuthenticatedRequest } from "../../../types/index.js";
 import express, {
   type NextFunction,
@@ -328,303 +329,307 @@ router.post(
   },
 );
 
-/**
- * @openapi
- * /terminal/command_history:
- *   post:
- *     summary: Save command to history
- *     description: Saves a command to the command history for a specific host.
- *     tags:
- *       - Terminal
- *     requestBody:
- *       required: true
- *       content:
- *         application/json:
- *           schema:
- *             type: object
- *             properties:
- *               hostId:
- *                 type: integer
- *               command:
- *                 type: string
- *     responses:
- *       201:
- *         description: Command saved successfully.
- *       400:
- *         description: Missing required parameters.
- *       500:
- *         description: Failed to save command.
- */
-router.post(
-  "/command_history",
-  authenticateJWT,
-  requireDataAccess,
-  async (req: Request, res: Response) => {
-    const userId = (req as AuthenticatedRequest).userId;
-    const { hostId, command } = req.body;
+// Command history is optional. Session settings and image-upload routes below
+// remain core, so only the command-history route registrations are gated.
+if (isFeatureEnabled("HISTORY")) {
+  /**
+   * @openapi
+   * /terminal/command_history:
+   *   post:
+   *     summary: Save command to history
+   *     description: Saves a command to the command history for a specific host.
+   *     tags:
+   *       - Terminal
+   *     requestBody:
+   *       required: true
+   *       content:
+   *         application/json:
+   *           schema:
+   *             type: object
+   *             properties:
+   *               hostId:
+   *                 type: integer
+   *               command:
+   *                 type: string
+   *     responses:
+   *       201:
+   *         description: Command saved successfully.
+   *       400:
+   *         description: Missing required parameters.
+   *       500:
+   *         description: Failed to save command.
+   */
+  router.post(
+    "/command_history",
+    authenticateJWT,
+    requireDataAccess,
+    async (req: Request, res: Response) => {
+      const userId = (req as AuthenticatedRequest).userId;
+      const { hostId, command } = req.body;
 
-    if (!isNonEmptyString(userId) || !hostId || !isNonEmptyString(command)) {
-      authLogger.warn("Invalid command history save request", {
-        operation: "command_history_save",
-        userId,
-        hasHostId: !!hostId,
-        hasCommand: !!command,
-      });
-      return res.status(400).json({ error: "Missing required parameters" });
-    }
+      if (!isNonEmptyString(userId) || !hostId || !isNonEmptyString(command)) {
+        authLogger.warn("Invalid command history save request", {
+          operation: "command_history_save",
+          userId,
+          hasHostId: !!hostId,
+          hasCommand: !!command,
+        });
+        return res.status(400).json({ error: "Missing required parameters" });
+      }
 
-    const sensitivePatterns = [
-      /passw(or)?d/i,
-      /\bsecret\b/i,
-      /\btoken\b/i,
-      /\bapi.?key\b/i,
-      /PASS(WORD)?=/i,
-      /AWS_SECRET/i,
-      /mysql\b.*-p/i,
-      /sudo\s+-S\b/,
-      /htpasswd/i,
-      /sshpass/i,
-      /curl\b.*-u\s/i,
-      /export\b.*(?:PASSWORD|SECRET|TOKEN|KEY)=/i,
-    ];
+      const sensitivePatterns = [
+        /passw(or)?d/i,
+        /\bsecret\b/i,
+        /\btoken\b/i,
+        /\bapi.?key\b/i,
+        /PASS(WORD)?=/i,
+        /AWS_SECRET/i,
+        /mysql\b.*-p/i,
+        /sudo\s+-S\b/,
+        /htpasswd/i,
+        /sshpass/i,
+        /curl\b.*-u\s/i,
+        /export\b.*(?:PASSWORD|SECRET|TOKEN|KEY)=/i,
+      ];
 
-    const trimmedCommand = command.trim();
-    if (sensitivePatterns.some((p: RegExp) => p.test(trimmedCommand))) {
-      return res.status(201).json({
-        id: 0,
-        userId,
-        hostId: parseInt(hostId, 10),
-        command: trimmedCommand,
-        executedAt: new Date().toISOString(),
-      });
-    }
+      const trimmedCommand = command.trim();
+      if (sensitivePatterns.some((p: RegExp) => p.test(trimmedCommand))) {
+        return res.status(201).json({
+          id: 0,
+          userId,
+          hostId: parseInt(hostId, 10),
+          command: trimmedCommand,
+          executedAt: new Date().toISOString(),
+        });
+      }
 
-    const globalEnabled = await createCurrentSettingsRepository().getBoolean(
-      "command_history_enabled",
-      true,
-    );
-    if (!globalEnabled) {
-      return res.status(201).json({
-        id: 0,
-        userId,
-        hostId: parseInt(hostId, 10),
-        command: trimmedCommand,
-        executedAt: new Date().toISOString(),
-      });
-    }
-
-    const hostRecord =
-      await createCurrentHostResolutionRepository().findHostById(
-        parseInt(hostId, 10),
-        userId,
+      const globalEnabled = await createCurrentSettingsRepository().getBoolean(
+        "command_history_enabled",
+        true,
       );
-    if (hostRecord?.enableCommandHistory === false) {
-      return res.status(201).json({
-        id: 0,
-        userId,
-        hostId: parseInt(hostId, 10),
-        command: trimmedCommand,
-        executedAt: new Date().toISOString(),
-      });
-    }
+      if (!globalEnabled) {
+        return res.status(201).json({
+          id: 0,
+          userId,
+          hostId: parseInt(hostId, 10),
+          command: trimmedCommand,
+          executedAt: new Date().toISOString(),
+        });
+      }
 
-    try {
-      const result = await createCurrentCommandHistoryRepository().create(
-        userId,
-        parseInt(hostId, 10),
-        trimmedCommand,
-      );
+      const hostRecord =
+        await createCurrentHostResolutionRepository().findHostById(
+          parseInt(hostId, 10),
+          userId,
+        );
+      if (hostRecord?.enableCommandHistory === false) {
+        return res.status(201).json({
+          id: 0,
+          userId,
+          hostId: parseInt(hostId, 10),
+          command: trimmedCommand,
+          executedAt: new Date().toISOString(),
+        });
+      }
 
-      res.status(201).json(result);
-    } catch (err) {
-      authLogger.error("Failed to save command to history", err);
-      res.status(500).json({
-        error: getErrorMessage(err, "Failed to save command"),
-      });
-    }
-  },
-);
+      try {
+        const result = await createCurrentCommandHistoryRepository().create(
+          userId,
+          parseInt(hostId, 10),
+          trimmedCommand,
+        );
 
-/**
- * @openapi
- * /terminal/command_history/{hostId}:
- *   get:
- *     summary: Get command history
- *     description: Retrieves the command history for a specific host.
- *     tags:
- *       - Terminal
- *     parameters:
- *       - in: path
- *         name: hostId
- *         required: true
- *         schema:
- *           type: integer
- *     responses:
- *       200:
- *         description: A list of commands.
- *       400:
- *         description: Invalid request parameters.
- *       500:
- *         description: Failed to fetch history.
- */
-router.get(
-  "/command_history/:hostId",
-  authenticateJWT,
-  requireDataAccess,
-  async (req: Request, res: Response) => {
-    const userId = (req as AuthenticatedRequest).userId;
-    const hostId = Array.isArray(req.params.hostId)
-      ? req.params.hostId[0]
-      : req.params.hostId;
-    const hostIdNum = parseInt(hostId, 10);
+        res.status(201).json(result);
+      } catch (err) {
+        authLogger.error("Failed to save command to history", err);
+        res.status(500).json({
+          error: getErrorMessage(err, "Failed to save command"),
+        });
+      }
+    },
+  );
 
-    if (!isNonEmptyString(userId) || isNaN(hostIdNum)) {
-      authLogger.warn("Invalid command history fetch request", {
-        userId,
-        hostId: hostIdNum,
-      });
-      return res.status(400).json({ error: "Invalid request parameters" });
-    }
+  /**
+   * @openapi
+   * /terminal/command_history/{hostId}:
+   *   get:
+   *     summary: Get command history
+   *     description: Retrieves the command history for a specific host.
+   *     tags:
+   *       - Terminal
+   *     parameters:
+   *       - in: path
+   *         name: hostId
+   *         required: true
+   *         schema:
+   *           type: integer
+   *     responses:
+   *       200:
+   *         description: A list of commands.
+   *       400:
+   *         description: Invalid request parameters.
+   *       500:
+   *         description: Failed to fetch history.
+   */
+  router.get(
+    "/command_history/:hostId",
+    authenticateJWT,
+    requireDataAccess,
+    async (req: Request, res: Response) => {
+      const userId = (req as AuthenticatedRequest).userId;
+      const hostId = Array.isArray(req.params.hostId)
+        ? req.params.hostId[0]
+        : req.params.hostId;
+      const hostIdNum = parseInt(hostId, 10);
 
-    try {
-      const uniqueCommands =
-        await createCurrentCommandHistoryRepository().listUniqueCommandsForHost(
+      if (!isNonEmptyString(userId) || isNaN(hostIdNum)) {
+        authLogger.warn("Invalid command history fetch request", {
+          userId,
+          hostId: hostIdNum,
+        });
+        return res.status(400).json({ error: "Invalid request parameters" });
+      }
+
+      try {
+        const uniqueCommands =
+          await createCurrentCommandHistoryRepository().listUniqueCommandsForHost(
+            userId,
+            hostIdNum,
+          );
+
+        res.json(uniqueCommands);
+      } catch (err) {
+        authLogger.error("Failed to fetch command history", err);
+        res.status(500).json({
+          error: getErrorMessage(err, "Failed to fetch history"),
+        });
+      }
+    },
+  );
+
+  /**
+   * @openapi
+   * /terminal/command_history/delete:
+   *   post:
+   *     summary: Delete a specific command from history
+   *     description: Deletes a specific command from the history of a host.
+   *     tags:
+   *       - Terminal
+   *     requestBody:
+   *       required: true
+   *       content:
+   *         application/json:
+   *           schema:
+   *             type: object
+   *             properties:
+   *               hostId:
+   *                 type: integer
+   *               command:
+   *                 type: string
+   *     responses:
+   *       200:
+   *         description: Command deleted successfully.
+   *       400:
+   *         description: Missing required parameters.
+   *       500:
+   *         description: Failed to delete command.
+   */
+  router.post(
+    "/command_history/delete",
+    authenticateJWT,
+    requireDataAccess,
+    async (req: Request, res: Response) => {
+      const userId = (req as AuthenticatedRequest).userId;
+      const { hostId, command } = req.body;
+
+      if (!isNonEmptyString(userId) || !hostId || !isNonEmptyString(command)) {
+        authLogger.warn("Invalid command delete request", {
+          operation: "command_history_delete",
+          userId,
+          hasHostId: !!hostId,
+          hasCommand: !!command,
+        });
+        return res.status(400).json({ error: "Missing required parameters" });
+      }
+
+      try {
+        const hostIdNum = parseInt(hostId, 10);
+
+        await createCurrentCommandHistoryRepository().deleteCommandForHost(
+          userId,
+          hostIdNum,
+          command.trim(),
+        );
+
+        res.json({ success: true });
+      } catch (err) {
+        authLogger.error("Failed to delete command from history", err);
+        res.status(500).json({
+          error: getErrorMessage(err, "Failed to delete command"),
+        });
+      }
+    },
+  );
+
+  /**
+   * @openapi
+   * /terminal/command_history/{hostId}:
+   *   delete:
+   *     summary: Clear command history
+   *     description: Clears the entire command history for a specific host.
+   *     tags:
+   *       - Terminal
+   *     parameters:
+   *       - in: path
+   *         name: hostId
+   *         required: true
+   *         schema:
+   *           type: integer
+   *     responses:
+   *       200:
+   *         description: Command history cleared successfully.
+   *       400:
+   *         description: Invalid request.
+   *       500:
+   *         description: Failed to clear history.
+   */
+  router.delete(
+    "/command_history/:hostId",
+    authenticateJWT,
+    requireDataAccess,
+    async (req: Request, res: Response) => {
+      const userId = (req as AuthenticatedRequest).userId;
+      const hostId = Array.isArray(req.params.hostId)
+        ? req.params.hostId[0]
+        : req.params.hostId;
+      const hostIdNum = parseInt(hostId, 10);
+
+      if (!isNonEmptyString(userId) || isNaN(hostIdNum)) {
+        authLogger.warn("Invalid command history clear request");
+        return res.status(400).json({ error: "Invalid request" });
+      }
+
+      try {
+        await createCurrentCommandHistoryRepository().deleteByUserAndHost(
           userId,
           hostIdNum,
         );
+        databaseLogger.info("Terminal history cleared", {
+          operation: "terminal_history_clear",
+          userId,
+          hostId: hostIdNum,
+        });
 
-      res.json(uniqueCommands);
-    } catch (err) {
-      authLogger.error("Failed to fetch command history", err);
-      res.status(500).json({
-        error: getErrorMessage(err, "Failed to fetch history"),
-      });
-    }
-  },
-);
-
-/**
- * @openapi
- * /terminal/command_history/delete:
- *   post:
- *     summary: Delete a specific command from history
- *     description: Deletes a specific command from the history of a host.
- *     tags:
- *       - Terminal
- *     requestBody:
- *       required: true
- *       content:
- *         application/json:
- *           schema:
- *             type: object
- *             properties:
- *               hostId:
- *                 type: integer
- *               command:
- *                 type: string
- *     responses:
- *       200:
- *         description: Command deleted successfully.
- *       400:
- *         description: Missing required parameters.
- *       500:
- *         description: Failed to delete command.
- */
-router.post(
-  "/command_history/delete",
-  authenticateJWT,
-  requireDataAccess,
-  async (req: Request, res: Response) => {
-    const userId = (req as AuthenticatedRequest).userId;
-    const { hostId, command } = req.body;
-
-    if (!isNonEmptyString(userId) || !hostId || !isNonEmptyString(command)) {
-      authLogger.warn("Invalid command delete request", {
-        operation: "command_history_delete",
-        userId,
-        hasHostId: !!hostId,
-        hasCommand: !!command,
-      });
-      return res.status(400).json({ error: "Missing required parameters" });
-    }
-
-    try {
-      const hostIdNum = parseInt(hostId, 10);
-
-      await createCurrentCommandHistoryRepository().deleteCommandForHost(
-        userId,
-        hostIdNum,
-        command.trim(),
-      );
-
-      res.json({ success: true });
-    } catch (err) {
-      authLogger.error("Failed to delete command from history", err);
-      res.status(500).json({
-        error: getErrorMessage(err, "Failed to delete command"),
-      });
-    }
-  },
-);
-
-/**
- * @openapi
- * /terminal/command_history/{hostId}:
- *   delete:
- *     summary: Clear command history
- *     description: Clears the entire command history for a specific host.
- *     tags:
- *       - Terminal
- *     parameters:
- *       - in: path
- *         name: hostId
- *         required: true
- *         schema:
- *           type: integer
- *     responses:
- *       200:
- *         description: Command history cleared successfully.
- *       400:
- *         description: Invalid request.
- *       500:
- *         description: Failed to clear history.
- */
-router.delete(
-  "/command_history/:hostId",
-  authenticateJWT,
-  requireDataAccess,
-  async (req: Request, res: Response) => {
-    const userId = (req as AuthenticatedRequest).userId;
-    const hostId = Array.isArray(req.params.hostId)
-      ? req.params.hostId[0]
-      : req.params.hostId;
-    const hostIdNum = parseInt(hostId, 10);
-
-    if (!isNonEmptyString(userId) || isNaN(hostIdNum)) {
-      authLogger.warn("Invalid command history clear request");
-      return res.status(400).json({ error: "Invalid request" });
-    }
-
-    try {
-      await createCurrentCommandHistoryRepository().deleteByUserAndHost(
-        userId,
-        hostIdNum,
-      );
-      databaseLogger.info("Terminal history cleared", {
-        operation: "terminal_history_clear",
-        userId,
-        hostId: hostIdNum,
-      });
-
-      res.json({ success: true });
-    } catch (err) {
-      authLogger.error("Failed to clear command history", err);
-      res.status(500).json({
-        error: getErrorMessage(err, "Failed to clear history"),
-      });
-    }
-  },
-);
+        res.json({ success: true });
+      } catch (err) {
+        authLogger.error("Failed to clear command history", err);
+        res.status(500).json({
+          error: getErrorMessage(err, "Failed to clear history"),
+        });
+      }
+    },
+  );
+}
 
 /**
  * @openapi

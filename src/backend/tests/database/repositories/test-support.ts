@@ -13,6 +13,7 @@ import path from "path";
 import * as schema from "../../../database/db/schema.js";
 import type { DatabaseContext } from "../../../database/repositories/database-context.js";
 import type { DatabaseDialect } from "../../../database/db/dialect.js";
+import { applyPersistentSessionMigration } from "../../../database/db/persistent-session-migration.js";
 
 /**
  * Which engine the repository tests run against.
@@ -54,6 +55,7 @@ export class TestSqliteDatabase {
     this.sqlite = new Database(":memory:");
     this.sqlite.exec("PRAGMA foreign_keys = ON");
     this.sqlite.exec(sqliteSchemaSql());
+    applyPersistentSessionMigration(this.sqlite);
     this.context = {
       dialect: "sqlite",
       drizzle: drizzle(this.sqlite, { schema }),

@@ -289,6 +289,13 @@ export type Tab = {
   /** Set when this tab joins someone else's live shared session instead of connecting/attaching its own. */
   joinSharedSessionId?: string | null;
   joinShareId?: string | null;
+  /** Server-owned persistent tmux session selected by the Sessions UI. */
+  persistentSessionId?: string | null;
+  /** Stable per-tab device identity; never authorizes access by itself. */
+  persistentClientId?: string | null;
+  persistentRole?: "writer" | "viewer";
+  /** Request writer control after attaching as a viewer. */
+  persistentTakeover?: boolean;
   initialFilePath?: string;
   /** Directory to open a Files tab into, distinct from initialFilePath (a specific file to open in an editor window). */
   initialPath?: string;

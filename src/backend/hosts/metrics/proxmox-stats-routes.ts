@@ -153,7 +153,14 @@ export function registerProxmoxStatsRoutes(
 
       const viewerSessionId = `proxmox-viewer-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
       pollingManager.registerViewer(id, viewerSessionId, userId);
-      await pollingManager.ensurePolling(host, userId);
+      // The first poll can legitimately take up to ~30s (SSH connect
+      // timeout) before a snapshot or poll error exists. Cap the wait so the
+      // HTTP response returns promptly with status "collecting"; the client
+      // keeps fetching until the snapshot (or the real error) lands.
+      await Promise.race([
+        pollingManager.ensurePolling(host, userId),
+        new Promise<void>((resolve) => setTimeout(resolve, 8000)),
+      ]);
 
       const cached = pollingManager.getStats(id);
       if (cached) {

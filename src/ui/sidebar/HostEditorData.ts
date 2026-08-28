@@ -206,7 +206,7 @@ export function createHostEditorForm(
         (key) => !hasOwn(host.guacamoleConfig, key),
       ),
     localEcho: host?.terminalConfig?.localEcho ?? "default",
-    fontSize: terminalConfig.fontSize ?? d?.fontSize ?? 14,
+    fontSize: terminalConfig.fontSize ?? d?.fontSize ?? 19,
     fontFamily:
       terminalConfig.fontFamily ??
       d?.fontFamily ??

@@ -18,6 +18,7 @@ import { visibleRailItems } from "./rail-items";
 import { useAiAvailability } from "@/hooks/use-ai-availability";
 
 export type RailView =
+  | "sessions"
   | "hosts"
   | "credentials"
   | "termix-id"
@@ -64,13 +65,13 @@ function buildRailButtons(
       all.push({
         kind: "tab",
         tabType: item.id as TabType,
-        icon: <Icon size={16} />,
+        icon: <Icon size={item.id === "sessions" ? 18 : 16} />,
         title: t(item.labelKey),
       });
     } else {
       all.push({
         view: item.id as RailView,
-        icon: <Icon size={16} />,
+        icon: <Icon size={item.id === "sessions" ? 18 : 16} />,
         title: t(item.labelKey),
         dot: item.id === "split-screen" ? splitMode !== "none" : undefined,
         promotable: item.promotable,

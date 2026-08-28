@@ -7,22 +7,31 @@ import type { ProxmoxStatsSnapshot } from "@/types/proxmox";
 // host-metrics-api.ts / host-metrics-status-api.ts. All routes live under the
 // `/proxmox-stats/*` prefix on the stats app (port 30005).
 
+export interface ProxmoxStatsResult {
+  data: ProxmoxStatsSnapshot | null;
+  /** Real backend error (SSH/pvesh failure) carried by the 404 body, if any. */
+  error?: string;
+}
+
 export async function getProxmoxStats(
   hostId: number,
-): Promise<ProxmoxStatsSnapshot | null> {
+): Promise<ProxmoxStatsResult> {
   try {
     const response = await statsApi.get(`/proxmox-stats/${hostId}`, {
       // Treat 404 as an expected "no stats yet / disabled" signal rather than
-      // an error so we don't spam warn logs on the client.
+      // an error so we don't spam warn logs on the client. The body still
+      // carries the poll error, so we forward it for display.
       validateStatus: (status) => status === 200 || status === 404,
     });
     if (response.status === 404) {
-      return null;
+      const body = response.data as { error?: string } | null;
+      return { data: null, error: body?.error };
     }
-    return response.data;
+    return { data: response.data as ProxmoxStatsSnapshot };
   } catch (error) {
     if (axios.isAxiosError(error) && error.response?.status === 404) {
-      return null;
+      const body = error.response.data as { error?: string } | null;
+      return { data: null, error: body?.error };
     }
     handleApiError(error, "fetch proxmox stats");
     throw error;

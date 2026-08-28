@@ -481,19 +481,19 @@
 
 /* Font size scale applied to html element */
 html.fs-xs {
-  font-size: 12px;
-}
-html.fs-sm {
-  font-size: 13px;
-}
-html.fs-md {
   font-size: 14px;
 }
+html.fs-sm {
+  font-size: 15px;
+}
+html.fs-md {
+  font-size: 16px;
+}
 html.fs-lg {
-  font-size: 17px;
+  font-size: 19px;
 }
 html.fs-xl {
-  font-size: 20px;
+  font-size: 22px;
 }
 
 @supports (padding-bottom: env(safe-area-inset-bottom)) {

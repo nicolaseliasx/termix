@@ -27,6 +27,10 @@ import { runAdaptivePolling } from "@/lib/adaptive-polling.ts";
 
 const HISTORY_LEN = 30;
 
+// Backend placeholder returned by the 404 body while the first poll is still
+// in flight (no snapshot and no poll error recorded yet).
+const COLLECTING_ERROR = "Stats not available";
+
 function statsChangeKey(data: ProxmoxStatsSnapshot): string {
   const bucket = (value: number | null | undefined) =>
     value == null ? null : Math.round(value / 5) * 5;
@@ -111,6 +115,7 @@ function ProxmoxStatsInner({
   const [viewerSessionId, setViewerSessionId] = React.useState<string | null>(
     null,
   );
+  const [lastError, setLastError] = React.useState<string | null>(null);
 
   const statsConfig = React.useMemo(
     () => parseProxmoxStatsConfig(currentHostConfig?.proxmoxStatsConfig),
@@ -185,15 +190,28 @@ function ProxmoxStatsInner({
     const result = await startProxmoxStatsPolling(currentHostConfig.id);
     if (result.viewerSessionId) setViewerSessionId(result.viewerSessionId);
 
+    if (result.status === "error" && result.error) {
+      throw new Error(result.error);
+    }
+
     addLog({
       type: "info",
       stage: "stats_polling",
       message: t("proxmoxStats.connecting"),
     });
 
-    const data = await getProxmoxStats(currentHostConfig.id);
+    let { data, error } = await getProxmoxStats(currentHostConfig.id);
+    const collectDeadline = Date.now() + 35000;
+    while (
+      !data &&
+      Date.now() < collectDeadline &&
+      (!error || error === COLLECTING_ERROR)
+    ) {
+      await new Promise((resolve) => setTimeout(resolve, 3000));
+      ({ data, error } = await getProxmoxStats(currentHostConfig.id));
+    }
     if (!data) {
-      throw new Error(t("proxmoxStats.connectionFailed"));
+      throw new Error(error || t("proxmoxStats.connectionFailed"));
     }
 
     setSnapshot(data);
@@ -209,8 +227,12 @@ function ProxmoxStatsInner({
     stopPollingRef.current?.();
     stopPollingRef.current = runAdaptivePolling(
       async () => {
-        const next = await getProxmoxStats(currentHostConfig.id);
-        if (!next) throw new Error(t("proxmoxStats.connectionFailed"));
+        const { data: next, error: nextError } = await getProxmoxStats(
+          currentHostConfig.id,
+        );
+        if (!next) {
+          throw new Error(nextError || t("proxmoxStats.connectionFailed"));
+        }
         const nextSignature = statsChangeKey(next);
         const changed = nextSignature !== signature;
         signature = nextSignature;
@@ -231,15 +253,18 @@ function ProxmoxStatsInner({
     connect: async () => {
       try {
         await fetchSnapshot();
+        setLastError(null);
         retry.markConnected();
       } catch (error: unknown) {
+        const message =
+          error instanceof Error
+            ? error.message
+            : t("proxmoxStats.connectionFailed");
+        setLastError(message);
         addLog({
           type: "error",
           stage: "error",
-          message:
-            error instanceof Error
-              ? error.message
-              : t("proxmoxStats.connectionFailed"),
+          message,
         });
         retry.markFailed();
       }
@@ -298,7 +323,7 @@ function ProxmoxStatsInner({
     }
     try {
       setIsRefreshing(true);
-      const data = await getProxmoxStats(currentHostConfig.id);
+      const { data } = await getProxmoxStats(currentHostConfig.id);
       if (data) {
         setSnapshot(data);
         pushHistory(data);
@@ -359,7 +384,11 @@ function ProxmoxStatsInner({
 
         <ConnectionScreen
           status={notEnabled ? "connected" : retry.status}
-          message={t("proxmoxStats.connecting")}
+          message={
+            lastError && retry.status !== "connected"
+              ? lastError
+              : t("proxmoxStats.connecting")
+          }
           attempt={retry.attempt}
           maxAttempts={retry.maxAttempts}
           nextRetryInMs={retry.nextRetryInMs}

@@ -1314,6 +1314,21 @@ const TerminalInner = forwardRef<TerminalHandle, SSHTerminalProps>(
               },
             }),
           );
+        } else if (hostConfig.persistentSessionId) {
+          isAttachingSessionRef.current = true;
+          ws.send(
+            JSON.stringify({
+              type: "persistent_attach",
+              data: {
+                persistentSessionId: hostConfig.persistentSessionId,
+                clientId:
+                  hostConfig.persistentClientId ?? hostConfig.instanceId,
+                role: hostConfig.persistentRole ?? "writer",
+                cols,
+                rows,
+              },
+            }),
+          );
         } else if (restoredSessionId) {
           sessionIdRef.current = restoredSessionId;
           isAttachingSessionRef.current = true;
@@ -1941,7 +1956,10 @@ const TerminalInner = forwardRef<TerminalHandle, SSHTerminalProps>(
                 }).catch(() => {});
               });
             }
-          } else if (msg.type === "sessionAttached") {
+          } else if (
+            msg.type === "sessionAttached" ||
+            msg.type === "persistent_attached"
+          ) {
             isAttachingSessionRef.current = false;
             opksshFailedRef.current = false;
             vaultFailedRef.current = false;
@@ -1969,6 +1987,27 @@ const TerminalInner = forwardRef<TerminalHandle, SSHTerminalProps>(
               stage: "connection",
               message: t("terminal.reconnected"),
             });
+            if (
+              msg.type === "persistent_attached" &&
+              hostConfig.persistentTakeover
+            ) {
+              webSocketRef.current?.send(
+                JSON.stringify({ type: "persistent_take_control" }),
+              );
+            }
+          } else if (msg.type === "persistent_error") {
+            updateConnectionError(
+              typeof msg.message === "string"
+                ? msg.message
+                : "Unable to attach persistent session",
+            );
+            setIsConnected(false);
+            setIsConnecting(false);
+            isConnectingRef.current = false;
+            if (connectionTimeoutRef.current) {
+              clearTimeout(connectionTimeoutRef.current);
+              connectionTimeoutRef.current = null;
+            }
           } else if (msg.type === "sessionExpired") {
             isAttachingSessionRef.current = false;
             sessionIdRef.current = null;

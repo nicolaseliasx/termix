@@ -131,10 +131,10 @@ describe("HostItem density parity", () => {
   );
 
   it.each(["comfortable", "compact"] as const)(
-    "exposes the wake-on-LAN button when a MAC address is set, in %s density",
+    "omits the optional wake-on-LAN button in %s density by default",
     (density) => {
       renderHostItem(density);
-      expect(screen.getByTitle("hosts.wakeOnLanAction")).toBeTruthy();
+      expect(screen.queryByTitle("hosts.wakeOnLanAction")).toBeNull();
     },
   );
 
@@ -171,16 +171,16 @@ describe("HostItem density parity", () => {
 
   it("learns repeated local actions and preloads the preferred host tool", () => {
     renderHostItem("comfortable");
-    const filesButton = screen.getByTitle("Files");
-    fireEvent.click(filesButton);
-    fireEvent.click(filesButton);
-    fireEvent.click(filesButton);
+    const tunnelButton = screen.getByTitle("Tunnel");
+    fireEvent.click(tunnelButton);
+    fireEvent.click(tunnelButton);
+    fireEvent.click(tunnelButton);
 
     const hostRow = screen.getByText("web-01").closest(".cursor-pointer");
     expect(hostRow).toBeTruthy();
     fireEvent.pointerEnter(hostRow!);
 
     expect(preloadTabSurfaceMock).toHaveBeenCalledWith("terminal");
-    expect(preloadTabSurfaceMock).toHaveBeenCalledWith("files");
+    expect(preloadTabSurfaceMock).toHaveBeenCalledWith("tunnel");
   });
 });

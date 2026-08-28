@@ -29,6 +29,11 @@ Thumbs.db
 
 .git
 .gitignore
+.codex/
+.opencode/
+backups/
+core
+core.*
 
 README.md
 CONTRIBUTING.md

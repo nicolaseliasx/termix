@@ -63,6 +63,13 @@ export interface RailItemDef {
 }
 
 export const RAIL_ITEMS: RailItemDef[] = [
+  {
+    id: "sessions",
+    icon: TerminalSquare,
+    labelKey: "nav.sessions",
+    mobilePrimary: true,
+    alwaysVisible: true,
+  },
   { id: "hosts", icon: Server, labelKey: "nav.hosts", mobilePrimary: true },
   {
     id: "credentials",

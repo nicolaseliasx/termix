@@ -1,4 +1,5 @@
 import { getErrorMessage } from "../../utils/error-message.js";
+import { isFeatureEnabled } from "../../utils/features.js";
 import type { AuthenticatedRequest } from "../../../types/index.js";
 import type { Request, RequestHandler, Response, Router } from "express";
 import { sendWakeOnLan, isValidMac } from "../../utils/wake-on-lan.js";
@@ -90,52 +91,56 @@ export function registerHostNetworkRoutes(
     },
   );
 
-  router.post(
-    "/db/host/:id/wake",
-    authenticateJWT,
-    requireDataAccess,
-    async (req: Request, res: Response) => {
-      const hostId = Number.parseInt(String(req.params.id), 10);
-      const userId = (req as AuthenticatedRequest).userId;
+  // Wake-on-LAN is optional (FEATURE_WAKE_ON_LAN; default off).
+  if (isFeatureEnabled("WAKE_ON_LAN")) {
+    router.post(
+      "/db/host/:id/wake",
+      authenticateJWT,
+      requireDataAccess,
+      async (req: Request, res: Response) => {
+        const hostId = Number.parseInt(String(req.params.id), 10);
+        const userId = (req as AuthenticatedRequest).userId;
 
-      try {
-        const host = await createCurrentHostResolutionRepository().findHostById(
-          hostId,
-          userId,
-        );
+        try {
+          const host =
+            await createCurrentHostResolutionRepository().findHostById(
+              hostId,
+              userId,
+            );
 
-        if (!host || host.userId !== userId) {
-          return res.status(404).json({ error: "Host not found" });
+          if (!host || host.userId !== userId) {
+            return res.status(404).json({ error: "Host not found" });
+          }
+
+          if (!host.macAddress || !isValidMac(host.macAddress)) {
+            return res
+              .status(400)
+              .json({ error: "No valid MAC address configured" });
+          }
+
+          await sendWakeOnLan(
+            host.macAddress,
+            host.wolBroadcastAddress ?? undefined,
+          );
+
+          sshLogger.info("Wake-on-LAN packet sent", {
+            operation: "wake_on_lan",
+            userId,
+            hostId,
+          });
+
+          res.json({ success: true });
+        } catch (error) {
+          sshLogger.error("Wake-on-LAN failed", error, {
+            operation: "wake_on_lan",
+            userId,
+            hostId,
+          });
+          res.status(500).json({
+            error: getErrorMessage(error, "Failed to send WoL packet"),
+          });
         }
-
-        if (!host.macAddress || !isValidMac(host.macAddress)) {
-          return res
-            .status(400)
-            .json({ error: "No valid MAC address configured" });
-        }
-
-        await sendWakeOnLan(
-          host.macAddress,
-          host.wolBroadcastAddress ?? undefined,
-        );
-
-        sshLogger.info("Wake-on-LAN packet sent", {
-          operation: "wake_on_lan",
-          userId,
-          hostId,
-        });
-
-        res.json({ success: true });
-      } catch (error) {
-        sshLogger.error("Wake-on-LAN failed", error, {
-          operation: "wake_on_lan",
-          userId,
-          hostId,
-        });
-        res.status(500).json({
-          error: getErrorMessage(error, "Failed to send WoL packet"),
-        });
-      }
-    },
-  );
+      },
+    );
+  }
 }

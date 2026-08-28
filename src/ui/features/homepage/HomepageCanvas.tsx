@@ -26,7 +26,6 @@ import { AddWidgetMenu } from "./dialogs/AddWidgetMenu";
 import { WidgetEditDialog } from "./dialogs/WidgetEditDialog";
 import { HomepageToolbar } from "./toolbar/HomepageToolbar";
 import { getWidgetType } from "./widgets/WidgetRegistry";
-import { FEATURES } from "@/lib/features";
 
 // Side-effect imports so widgets register themselves
 import "./widgets/ServiceLinkWidget";
@@ -81,10 +80,10 @@ function nextZOrder(widgets: CanvasWidget[]): number {
 
 // Feature-gated widgets self-register via side effect on import.
 const featureWidgetLoads: Promise<unknown>[] = [];
-if (FEATURES.sftp === true) {
+if (__TERMIX_FEATURE_SFTP__) {
   featureWidgetLoads.push(import("./widgets/FileManagerWidget"));
 }
-if (FEATURES.docker === true) {
+if (__TERMIX_FEATURE_DOCKER__) {
   featureWidgetLoads.push(import("./widgets/DockerWidget"));
 }
 const featureWidgetsReady = Promise.all(featureWidgetLoads);

@@ -125,16 +125,9 @@ class TerminalSessionManager {
   ): string {
     const userSessions = this.getUserSessions(userId);
     if (userSessions.length >= MAX_SESSIONS_PER_USER) {
-      const detached = userSessions
-        .filter((s) => this.getOwnerParticipant(s) === null)
-        .sort(
-          (a, b) =>
-            (a.lastDetachedAt ?? a.createdAt) -
-            (b.lastDetachedAt ?? b.createdAt),
-        );
-      if (detached.length > 0) {
-        this.destroySession(detached[0].id);
-      }
+      // Capacity is explicit. Never destroy a detached session to make room:
+      // closing a bridge is not a lifecycle operation for persistent tmux.
+      throw new Error("TERMINAL_SESSION_CAPACITY_EXCEEDED");
     }
 
     if (tabInstanceId) {

@@ -481,7 +481,10 @@ export function AiPanel({ activeTab }: { activeTab?: string | null }) {
                 );
                 return;
               }
-              if (event.key === "Enter" || event.key === "Tab") {
+              if (
+                (event.key === "Enter" || event.key === "Tab") &&
+                !event.shiftKey
+              ) {
                 event.preventDefault();
                 insertMention(mentionMatches[mentionIndex]);
                 return;
@@ -495,6 +498,19 @@ export function AiPanel({ activeTab }: { activeTab?: string | null }) {
             if (event.key === "Enter" && !event.shiftKey) {
               event.preventDefault();
               void handleSend();
+              return;
+            }
+            if (event.key === "Enter" && event.shiftKey) {
+              // Insert the newline at the caret explicitly so no global
+              // shortcut handler can swallow the keystroke.
+              event.preventDefault();
+              const textarea = textareaRef.current;
+              if (!textarea) return;
+              const start = textarea.selectionStart ?? input.length;
+              const end = textarea.selectionEnd ?? start;
+              textarea.setRangeText("\n", start, end, "end");
+              setInput(textarea.value);
+              updateMentionQuery(textarea.value, textarea.selectionStart ?? 0);
             }
           }}
           placeholder={t("ai.inputPlaceholder")}

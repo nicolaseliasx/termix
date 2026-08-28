@@ -836,7 +836,7 @@ export const FAST_SCROLL_MODIFIERS = [
 export const DEFAULT_TERMINAL_CONFIG = {
   cursorBlink: true,
   cursorStyle: "bar" as const,
-  fontSize: 14,
+  fontSize: 19,
   fontFamily: "Caskaydia Cove Nerd Font Mono",
   letterSpacing: 0,
   lineHeight: 1.0,

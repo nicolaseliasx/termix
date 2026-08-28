@@ -145,6 +145,10 @@ function transform(source, dialect) {
     out = out.replace(/sql`CURRENT_TIMESTAMP`/g, "sql`(CURRENT_TIMESTAMP)`");
   }
 
+  // MySQL has no partial-index predicate API. Keep SQLite/Postgres semantics
+  // where available, while generating a valid (conservative) unique index.
+  if (!isPg) out = out.replace(/\.where\(sql`[^`]*`\)/g, "");
+
   // Floating point.
   out = out.replace(/\breal\("([a-z0-9_]+)"\)/g, (_, col) =>
     isPg ? `doublePrecision("${col}")` : `double("${col}")`,

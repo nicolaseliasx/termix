@@ -11,6 +11,7 @@ import {
   Maximize2,
   Minimize2,
   PanelRight,
+  RefreshCw,
   RotateCcw,
   SquareArrowOutUpRight,
 } from "lucide-react";
@@ -33,7 +34,6 @@ import {
   PROMOTABLE_IDS,
   RIGHT_DOCKABLE_IDS,
 } from "@/sidebar/rail-items";
-import { FEATURES } from "@/lib/features";
 import { MultiPanelHint } from "@/sidebar/MultiPanelHint";
 import { OnboardingDialog } from "@/onboarding/OnboardingDialog";
 import { UI_ONBOARDING_VERSION } from "@/types/ui-preferences";
@@ -51,6 +51,11 @@ const CommandPalette = lazy(() =>
 const HostsPanel = lazy(() =>
   import("@/sidebar/HostsPanel").then((m) => ({ default: m.HostsPanel })),
 );
+const SessionsPanel = lazy(() =>
+  import("@/features/sessions/SessionsPanel").then((m) => ({
+    default: m.SessionsPanel,
+  })),
+);
 const QuickConnectPanel = lazy(() =>
   import("@/sidebar/QuickConnectPanel").then((m) => ({
     default: m.QuickConnectPanel,
@@ -59,14 +64,13 @@ const QuickConnectPanel = lazy(() =>
 const SerialPanel = lazy(() =>
   import("@/sidebar/SerialPanel").then((m) => ({ default: m.SerialPanel })),
 );
-const SplitScreenPanel =
-  FEATURES.split_terminal === true
-    ? lazy(() =>
-        import("@/sidebar/SplitScreenPanel").then((m) => ({
-          default: m.SplitScreenPanel,
-        })),
-      )
-    : null;
+const SplitScreenPanel = __TERMIX_FEATURE_SPLIT_TERMINAL__
+  ? lazy(() =>
+      import("@/sidebar/SplitScreenPanel").then((m) => ({
+        default: m.SplitScreenPanel,
+      })),
+    )
+  : null;
 const AlertManager = lazy(() =>
   import("@/dashboard/panels/alerts/AlertManager").then((m) => ({
     default: m.AlertManager,
@@ -77,54 +81,49 @@ const AlertManager = lazy(() =>
 const SshToolsPanel = lazy(() =>
   import("@/sidebar/SshToolsPanel").then((m) => ({ default: m.SshToolsPanel })),
 );
-const SnippetsPanel =
-  FEATURES.snippets === true
-    ? lazy(() =>
-        import("@/sidebar/SnippetsPanel").then((m) => ({
-          default: m.SnippetsPanel,
-        })),
-      )
-    : null;
-const MacrosPanel =
-  FEATURES.macros === true
-    ? lazy(() =>
-        import("@/sidebar/MacrosPanel").then((m) => ({
-          default: m.MacrosPanel,
-        })),
-      )
-    : null;
+const SnippetsPanel = __TERMIX_FEATURE_SNIPPETS__
+  ? lazy(() =>
+      import("@/sidebar/SnippetsPanel").then((m) => ({
+        default: m.SnippetsPanel,
+      })),
+    )
+  : null;
+const MacrosPanel = __TERMIX_FEATURE_MACROS__
+  ? lazy(() =>
+      import("@/sidebar/MacrosPanel").then((m) => ({
+        default: m.MacrosPanel,
+      })),
+    )
+  : null;
 const FleetsPanel = lazy(() =>
   import("@/sidebar/FleetsPanel").then((m) => ({ default: m.FleetsPanel })),
 );
-const WorkspacesPanel =
-  FEATURES.split_terminal === true
-    ? lazy(() =>
-        import("@/sidebar/WorkspacesPanel").then((m) => ({
-          default: m.WorkspacesPanel,
-        })),
-      )
-    : null;
-const AutomationsPanel =
-  FEATURES.automations_panel === true
-    ? lazy(() =>
-        import("@/sidebar/AutomationsPanel").then((m) => ({
-          default: m.AutomationsPanel,
-        })),
-      )
-    : null;
+const WorkspacesPanel = __TERMIX_FEATURE_SPLIT_TERMINAL__
+  ? lazy(() =>
+      import("@/sidebar/WorkspacesPanel").then((m) => ({
+        default: m.WorkspacesPanel,
+      })),
+    )
+  : null;
+const AutomationsPanel = __TERMIX_FEATURE_AUTOMATIONS_PANEL__
+  ? lazy(() =>
+      import("@/sidebar/AutomationsPanel").then((m) => ({
+        default: m.AutomationsPanel,
+      })),
+    )
+  : null;
 const AiPanel = lazy(() =>
   import("@/features/ai/AiPanel").then((m) => ({
     default: m.AiPanel,
   })),
 );
-const HistoryPanel =
-  FEATURES.history === true
-    ? lazy(() =>
-        import("@/sidebar/HistoryPanel").then((m) => ({
-          default: m.HistoryPanel,
-        })),
-      )
-    : null;
+const HistoryPanel = __TERMIX_FEATURE_HISTORY__
+  ? lazy(() =>
+      import("@/sidebar/HistoryPanel").then((m) => ({
+        default: m.HistoryPanel,
+      })),
+    )
+  : null;
 const SessionLogsPanel = lazy(() =>
   import("@/sidebar/SessionLogsPanel").then((m) => ({
     default: m.SessionLogsPanel,
@@ -344,7 +343,29 @@ export function AppShell({
   }, [loadOnboardingContext]);
 
   const [sidebarOpen, setSidebarOpen] = useState(true);
-  const [railView, setRailView] = useState<RailView>("hosts");
+  const [railView, setRailView] = useState<RailView>("sessions");
+  // The sessions panel registers its refresh here so the sidebar header
+  // button can drive the exact same reload (reconcile + list + hosts).
+  const sessionsRefreshRef = useRef<(() => Promise<void>) | null>(null);
+  const [sessionsRefreshing, setSessionsRefreshing] = useState(false);
+  const sessionsRefreshingRef = useRef(false);
+  const registerSessionsRefresh = useCallback(
+    (refresh: () => Promise<void>) => {
+      sessionsRefreshRef.current = refresh;
+    },
+    [],
+  );
+  const refreshSessions = useCallback(async () => {
+    if (sessionsRefreshingRef.current) return;
+    sessionsRefreshingRef.current = true;
+    setSessionsRefreshing(true);
+    try {
+      await sessionsRefreshRef.current?.();
+    } finally {
+      sessionsRefreshingRef.current = false;
+      setSessionsRefreshing(false);
+    }
+  }, []);
   const [remoteSyncInitialServerUrl, setRemoteSyncInitialServerUrl] = useState<
     string | undefined
   >(undefined);
@@ -601,8 +622,20 @@ export function AppShell({
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.code === "ShiftLeft" && !e.repeat) {
+        const target = e.target as HTMLElement | null;
+        // Typing a capital letter in a text field must not summon the
+        // palette, so double-shift is ignored while editing text.
+        const editingText =
+          target !== null &&
+          (target.tagName === "INPUT" ||
+            target.tagName === "TEXTAREA" ||
+            target.isContentEditable);
         const now = Date.now();
-        if (now - lastShiftTime.current < 300 && commandPaletteShortcutEnabled)
+        if (
+          !editingText &&
+          now - lastShiftTime.current < 300 &&
+          commandPaletteShortcutEnabled
+        )
           setCommandPaletteOpen((prev) => !prev);
         lastShiftTime.current = now;
       }
@@ -1186,7 +1219,7 @@ export function AppShell({
     );
     let restoredSplitTabId: string | null = null;
     if (
-      FEATURES.split_terminal === true &&
+      __TERMIX_FEATURE_SPLIT_TERMINAL__ &&
       workspace.payload.splitMode !== "none" &&
       restoredPaneIds.some(Boolean)
     ) {
@@ -1517,6 +1550,10 @@ export function AppShell({
       serialConfig?: SerialConfig;
       joinSharedSessionId?: string | null;
       joinShareId?: string | null;
+      persistentSessionId?: string | null;
+      persistentClientId?: string | null;
+      persistentRole?: "writer" | "viewer";
+      persistentTakeover?: boolean;
     },
   ) {
     const tabId = `${host.name}-${type}-${Date.now()}`;
@@ -1536,6 +1573,10 @@ export function AppShell({
     const serialConfig = restore?.serialConfig;
     const joinSharedSessionId = restore?.joinSharedSessionId ?? null;
     const joinShareId = restore?.joinShareId ?? null;
+    const persistentSessionId = restore?.persistentSessionId ?? null;
+    const persistentClientId = restore?.persistentClientId ?? instanceId;
+    const persistentRole = restore?.persistentRole ?? "writer";
+    const persistentTakeover = restore?.persistentTakeover ?? false;
     // A saved label that doesn't match the bare host name or the auto-numbered pattern is a custom label
     const isCustomLabel =
       savedLabel != null &&
@@ -1559,6 +1600,10 @@ export function AppShell({
             restoredSessionId: restore?.restoredSessionId ?? null,
             joinSharedSessionId,
             joinShareId,
+            persistentSessionId,
+            persistentClientId,
+            persistentRole,
+            persistentTakeover,
             initialFilePath,
             initialPath,
             serialConfig,
@@ -1594,6 +1639,10 @@ export function AppShell({
           restoredSessionId: restore?.restoredSessionId ?? null,
           joinSharedSessionId,
           joinShareId,
+          persistentSessionId,
+          persistentClientId,
+          persistentRole,
+          persistentTakeover,
           initialFilePath,
           initialPath,
           serialConfig,
@@ -2281,6 +2330,39 @@ export function AppShell({
   const renderSidebarPanels = (railView: RailView, owned = true) => (
     <Suspense fallback={<SidebarPanelFallback />}>
       <div className="flex flex-col flex-1 min-h-0 overflow-hidden">
+        {railView === "sessions" && (
+          <SessionsPanel
+            onRegisterRefresh={registerSessionsRefresh}
+            onAttach={(session, host) => {
+              const existing = tabsRef.current.find(
+                (tab) =>
+                  tab.type === "terminal" &&
+                  tab.persistentSessionId === session.id,
+              );
+              if (existing) {
+                setActiveTabId(existing.id);
+                if (isMobile) setSidebarOpen(false);
+                return;
+              }
+              openTab(host, "terminal", {
+                instanceId:
+                  typeof crypto.randomUUID === "function"
+                    ? crypto.randomUUID()
+                    : `${Date.now()}`,
+                restoredSessionId: null,
+                savedLabel: session.displayName,
+                persistentSessionId: session.id,
+                persistentClientId:
+                  typeof crypto.randomUUID === "function"
+                    ? crypto.randomUUID()
+                    : `${Date.now()}-client`,
+                persistentRole: "writer",
+                persistentTakeover: false,
+              });
+              if (isMobile) setSidebarOpen(false);
+            }}
+          />
+        )}
         {owned && (
           <>
             <div
@@ -2621,15 +2703,31 @@ export function AppShell({
       {!isMobile && (
         <>
           <Separator orientation="vertical" />
-          <Button
-            variant="ghost"
-            size="icon"
-            className="h-full w-12.5 border-y-0 border-border rounded-none text-muted-foreground hover:text-foreground"
-            title="Reset width"
-            onClick={() => setSidebarWidth(291)}
-          >
-            <RotateCcw className="size-3.5" />
-          </Button>
+          {railView === "sessions" ? (
+            <Button
+              variant="ghost"
+              size="icon"
+              className="h-full w-12.5 border-y-0 border-r-0 border-border rounded-none text-muted-foreground hover:text-foreground"
+              title="Refresh sessions"
+              aria-label="Refresh sessions"
+              disabled={sessionsRefreshing}
+              onClick={() => void refreshSessions()}
+            >
+              <RefreshCw
+                className={`size-3.5 ${sessionsRefreshing ? "animate-spin" : ""}`}
+              />
+            </Button>
+          ) : (
+            <Button
+              variant="ghost"
+              size="icon"
+              className="h-full w-12.5 border-y-0 border-r-0 border-border rounded-none text-muted-foreground hover:text-foreground"
+              title="Reset width"
+              onClick={() => setSidebarWidth(291)}
+            >
+              <RotateCcw className="size-3.5" />
+            </Button>
+          )}
         </>
       )}
       {isSettingsView && (

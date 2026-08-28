@@ -48,6 +48,7 @@ import { SsoProviderRepository } from "./sso-provider-repository.js";
 import { TermixIdentityCaRepository } from "./termix-identity-ca-repository.js";
 import { TermixIdentityRepository } from "./termix-identity-repository.js";
 import { TmuxSessionTagRepository } from "./tmux-session-tag-repository.js";
+import { PersistentSessionRepository } from "./persistent-session-repository.js";
 import { TransferRecentRepository } from "./transfer-recent-repository.js";
 import { TrustedDeviceRepository } from "./trusted-device-repository.js";
 import { UserDataExportRepository } from "./user-data-export-repository.js";
@@ -464,6 +465,13 @@ export function createCurrentTmuxSessionTagRepository(): TmuxSessionTagRepositor
   return new TmuxSessionTagRepository(
     createCurrentRepositoryContext(),
     createCurrentRepositoryWriteHook("tmux_session_tag_repository_write"),
+  );
+}
+
+export function createCurrentPersistentSessionRepository(): PersistentSessionRepository {
+  return new PersistentSessionRepository(
+    createCurrentRepositoryContext(),
+    createCurrentRepositoryWriteHook("persistent_session_repository_write"),
   );
 }
 

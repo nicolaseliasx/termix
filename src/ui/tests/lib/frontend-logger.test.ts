@@ -28,29 +28,34 @@ function allLoggedText(): string {
 }
 
 describe("frontend logger request success", () => {
-  it("includes the success status icon and a fast-performance icon", () => {
+  it("logs the status code and response time with plain tags", () => {
     apiLogger.requestSuccess("get", "https://x.test/api", 200, 50);
     const text = allLoggedText();
-    expect(text).toContain("✅"); // 2xx status icon
-    expect(text).toContain("⚡"); // <100ms performance icon
+    expect(text).toContain("RESPONSE:");
+    expect(text).toContain("[INFO]");
+    expect(text).toContain("[API]");
     expect(text).toContain("200");
+    expect(text).toContain("50ms");
   });
 
-  it("uses the slow-performance icon for long requests", () => {
+  it("keeps logging slow requests with their duration", () => {
     apiLogger.requestSuccess("get", "https://x.test/api", 200, 4000);
-    expect(allLoggedText()).toContain("🐌");
+    expect(allLoggedText()).toContain("4000ms");
   });
 });
 
 describe("frontend logger error mapping", () => {
-  it("uses a client-error icon for 4xx responses", () => {
+  it("reports client-error responses at the error level", () => {
     apiLogger.requestError("get", "https://x.test/api", 404, "Not Found", 30);
-    expect(allLoggedText()).toContain("⚠️");
+    const text = allLoggedText();
+    expect(text).toContain("[ERROR]");
+    expect(text).toContain("404");
+    expect(text).toContain("Not Found");
   });
 
-  it("uses a server-error icon for 5xx responses", () => {
+  it("reports server-error responses at the error level", () => {
     apiLogger.requestError("get", "https://x.test/api", 500, "Boom", 30);
-    expect(allLoggedText()).toContain("❌");
+    expect(allLoggedText()).toContain("500");
   });
 });
 

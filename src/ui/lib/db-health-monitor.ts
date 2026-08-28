@@ -14,16 +14,15 @@
  * to reflect the current UX contract: users can keep working regardless
  * of backend hiccups and are simply informed via a toast.
  */
+import { normalizeApiErrorPayload } from "./api-error-payload";
+
 type EventListener = (...args: unknown[]) => void;
 
 interface HttpLikeError {
   message?: string;
   code?: string;
   response?: {
-    data?: {
-      error?: string;
-      code?: string;
-    };
+    data?: unknown;
   };
 }
 
@@ -71,9 +70,11 @@ class DatabaseHealthMonitor {
 
   reportDatabaseError(error: unknown) {
     const errorLike = error as HttpLikeError;
+    const responseError = normalizeApiErrorPayload(errorLike.response?.data);
     const errorMessage =
-      errorLike.response?.data?.error || errorLike.message || "";
-    const errorCode = errorLike.response?.data?.code || errorLike.code;
+      responseError.message ||
+      (typeof errorLike.message === "string" ? errorLike.message : "");
+    const errorCode = responseError.code || errorLike.code;
     const lowerMessage = errorMessage.toLowerCase();
 
     const isDatabaseError =

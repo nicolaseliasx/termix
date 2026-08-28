@@ -894,7 +894,7 @@ export const sessionRecordings = pgTable(
     startedAt: varchar("started_at", { length: 255 })
       .notNull()
       .default(sql`CURRENT_TIMESTAMP`),
-    endedAt: text("ended_at"),
+    endedAt: varchar("ended_at", { length: 255 }),
     duration: integer("duration"),
 
     commands: text("commands"),
@@ -1396,6 +1396,43 @@ export const tmuxSessionTags = pgTable("tmux_session_tags", {
     .default(sql`CURRENT_TIMESTAMP`),
 });
 // --- tmux-monitor end ---
+
+// Lifecycle is represented by durable facts instead of a stale "running" flag.
+export const persistentSessions = pgTable(
+  "persistent_sessions",
+  {
+    id: varchar("id", { length: 255 }).primaryKey(),
+    userId: varchar("user_id", { length: 255 }).notNull().references(() => users.id, { onDelete: "cascade" }),
+    hostId: integer("host_id").notNull().references(() => hosts.id, { onDelete: "cascade" }),
+    displayName: text("display_name").notNull(),
+    tmuxSessionName: varchar("tmux_session_name", { length: 255 }).notNull(),
+    managementState: text("management_state").notNull().default("managed"),
+    expiryMode: text("expiry_mode").notNull().default("manual"),
+    expirySeconds: integer("expiry_seconds"),
+    remoteCreatedAt: text("remote_created_at"),
+    createdAt: varchar("created_at", { length: 255 }).notNull().default(sql`CURRENT_TIMESTAMP`),
+    lastAttachedAt: text("last_attached_at"), lastDetachedAt: text("last_detached_at"),
+    expiresAt: varchar("expires_at", { length: 255 }), lastObservedAt: text("last_observed_at"),
+    endedAt: varchar("ended_at", { length: 255 }), endReason: text("end_reason"),
+  },
+  (table) => [
+    index("idx_persistent_sessions_user_active").on(table.userId, table.endedAt),
+    index("idx_persistent_sessions_host_active").on(table.hostId, table.endedAt),
+    index("idx_persistent_sessions_expiry").on(table.expiresAt),
+    uniqueIndex("uq_persistent_sessions_host_tmux_active").on(table.hostId, table.tmuxSessionName).where(sql`${table.endedAt} IS NULL`),
+  ],
+);
+
+export const persistentSessionEvents = pgTable(
+  "persistent_session_events",
+  {
+    id: serial("id").primaryKey(),
+    sessionId: varchar("session_id", { length: 255 }).notNull().references(() => persistentSessions.id, { onDelete: "cascade" }),
+    eventType: text("event_type").notNull(), actorId: text("actor_id"), clientId: text("client_id"),
+    details: text("details"), createdAt: varchar("created_at", { length: 255 }).notNull().default(sql`CURRENT_TIMESTAMP`),
+  },
+  (table) => [index("idx_persistent_session_events_session_time").on(table.sessionId, table.createdAt)],
+);
 
 // --- metrics-history begin ---
 export const hostMetricsHistory = pgTable("host_metrics_history", {

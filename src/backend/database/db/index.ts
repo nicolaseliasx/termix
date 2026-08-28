@@ -23,6 +23,7 @@ import { getDefaultGuacdUrl } from "../../utils/guacd-config.js";
 import { resolveDatabaseDialect, type DatabaseDialect } from "./dialect.js";
 import { connectRemoteDatabase } from "./connect.js";
 import { runRemoteMigrations } from "./migrate.js";
+import { applyPersistentSessionMigration } from "./persistent-session-migration.js";
 import type { PortableDatabase } from "../repositories/database-context.js";
 
 const dataDir = process.env.DATA_DIR || "./db/data";
@@ -1928,6 +1929,8 @@ const migrateSchema = () => {
     });
   }
   // --- tmux-monitor end ---
+
+  applyPersistentSessionMigration(sqlite);
 
   try {
     const existingRoles = sqlite.prepare("SELECT name, is_system FROM roles").all() as Array<{ name: string; is_system: number }>;

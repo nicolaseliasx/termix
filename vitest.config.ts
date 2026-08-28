@@ -2,6 +2,28 @@ import path from "path";
 import { defineConfig } from "vitest/config";
 
 export default defineConfig({
+  define: {
+    __TERMIX_FEATURES__: JSON.stringify({
+      sftp: false,
+      docker: false,
+      split_terminal: false,
+      history: false,
+      snippets: false,
+      macros: false,
+      automations_panel: false,
+      wake_on_lan: false,
+      advanced_audit: false,
+    }),
+    __TERMIX_FEATURE_SFTP__: "false",
+    __TERMIX_FEATURE_DOCKER__: "false",
+    __TERMIX_FEATURE_SPLIT_TERMINAL__: "false",
+    __TERMIX_FEATURE_HISTORY__: "false",
+    __TERMIX_FEATURE_SNIPPETS__: "false",
+    __TERMIX_FEATURE_MACROS__: "false",
+    __TERMIX_FEATURE_AUTOMATIONS_PANEL__: "false",
+    __TERMIX_FEATURE_WAKE_ON_LAN__: "false",
+    __TERMIX_FEATURE_ADVANCED_AUDIT__: "false",
+  },
   resolve: {
     alias: {
       "@/types": path.resolve(__dirname, "./src/types"),

@@ -7,6 +7,12 @@ export interface TerminalHostConfig {
   /** Set when this tab joins someone else's live shared SSH session instead of connecting/attaching. */
   joinSharedSessionId?: string | null;
   joinShareId?: string | null;
+  /** Server-owned persistent tmux session to attach when this terminal opens. */
+  persistentSessionId?: string | null;
+  /** Stable per-tab device identity for persistent-session WebSocket bridges. */
+  persistentClientId?: string | null;
+  persistentRole?: "writer" | "viewer";
+  persistentTakeover?: boolean;
   name?: string;
   ip: string;
   port: number;

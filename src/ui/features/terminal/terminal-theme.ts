@@ -6,7 +6,7 @@ const TERMIX_DEFAULT_COLORS: Record<
   string,
   { background: string; foreground: string }
 > = {
-  dark: { background: "#0c0d0b", foreground: "#fafafa" },
+  dark: { background: "#000000", foreground: "#fafafa" },
   light: { background: "#ffffff", foreground: "#111210" },
   dracula: { background: "#282a36", foreground: "#f8f8f2" },
   catppuccin: { background: "#1e1e2e", foreground: "#cdd6f4" },

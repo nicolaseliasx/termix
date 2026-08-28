@@ -141,6 +141,12 @@ export default defineConfig({
     ),
     __TERMIX_BUILD_PROFILE__: JSON.stringify(termixBuildProfile ?? "core"),
     __TERMIX_FEATURES__: JSON.stringify(termixFeatures),
+    ...Object.fromEntries(
+      FEATURE_IDS.map((id) => [
+        `__TERMIX_FEATURE_${id.toUpperCase()}__`,
+        JSON.stringify(termixFeatures[id]),
+      ]),
+    ),
   },
   resolve: {
     alias: {

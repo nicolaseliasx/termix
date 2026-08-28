@@ -99,7 +99,7 @@ function GuestTerminalView({
   useEffect(() => {
     if (!terminal || !xtermRef.current) return;
 
-    terminal.options.theme = { background: "#0c0d0b" };
+    terminal.options.theme = { background: "#000000" };
 
     const fitAddon = new FitAddon();
     terminal.loadAddon(fitAddon);

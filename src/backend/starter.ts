@@ -15,6 +15,7 @@ import {
   setGlobalLogLevel,
 } from "./utils/logger.js";
 import { getTrustedProxyAuthConfig } from "./utils/trusted-proxy-auth.js";
+import { isFeatureEnabled } from "./utils/features.js";
 
 /**
  * host:port from DATABASE_URL for the startup log. Parsed rather than printed
@@ -295,12 +296,24 @@ async function provisionLocalDesktopUserIfNeeded(): Promise<void> {
 
     const { serverReady } = await import("./database/database.js");
     await serverReady;
+    const {
+      startPersistentSessionMaintenance,
+      stopPersistentSessionMaintenance,
+    } = await import("./hosts/sessions/maintenance.js");
+    // Remote tmux is authoritative. Start its first scan now, then continue
+    // observing without holding open SSH bridges.
+    startPersistentSessionMaintenance().start();
     await import("./hosts/terminal/index.js");
     await import("./hosts/tunnel/index.js");
-    await import("./hosts/file-manager/index.js");
+    // Optional services (boot-time feature flags, default off).
+    if (isFeatureEnabled("SFTP")) {
+      await import("./hosts/file-manager/index.js");
+    }
     await import("./hosts/metrics/index.js");
-    await import("./hosts/docker/index.js");
-    await import("./hosts/docker/console.js");
+    if (isFeatureEnabled("DOCKER")) {
+      await import("./hosts/docker/index.js");
+      await import("./hosts/docker/console.js");
+    }
     await import("./hosts/tmux/index.js");
     await import("./hosts/serial.js");
     await import("./services/dashboard.js");
@@ -357,6 +370,7 @@ async function provisionLocalDesktopUserIfNeeded(): Promise<void> {
       systemLogger.info(`Received ${signal}, initiating graceful shutdown...`, {
         operation: "shutdown",
       });
+      stopPersistentSessionMaintenance();
       // Only SQLite has anything to flush. On a client-server engine the writes
       // committed as they happened, so there is no file to save and claiming
       // otherwise in the log would be untrue.

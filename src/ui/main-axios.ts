@@ -63,6 +63,7 @@ import {
 import { dbHealthMonitor } from "@/lib/db-health-monitor";
 import { asHttpError } from "@/lib/http-error";
 import { getDeviceId } from "@/lib/device-id";
+import { normalizeApiErrorPayload } from "@/lib/api-error-payload";
 
 export type ServerStatus = {
   status: "online" | "reachable" | "offline";
@@ -538,7 +539,7 @@ function createApiInstance(
       }
 
       if (responseTime > 3000) {
-        logger.warn(`🐌 Slow request: ${responseTime}ms`, context);
+        logger.warn(`Slow request: ${responseTime}ms`, context);
       }
 
       dbHealthMonitor.reportDatabaseSuccess();
@@ -557,12 +558,10 @@ function createApiInstance(
       const url = error.config?.url || "UNKNOWN";
       const fullUrl = error.config ? `${error.config.baseURL}${url}` : url;
       const status = error.response?.status;
+      const responseError = normalizeApiErrorPayload(error.response?.data);
       const message =
-        (error.response?.data as { error?: string })?.error ||
-        (error as Error).message ||
-        "Unknown error";
-      const errorCode =
-        (error.response?.data as { code?: string })?.code || error.code;
+        responseError.message || (error as Error).message || "Unknown error";
+      const errorCode = responseError.code || error.code;
 
       const context: LogContext = {
         requestId,
@@ -990,11 +989,9 @@ export function handleApiError(error: unknown, operation: string): never {
 
   if (axios.isAxiosError(error)) {
     const status = error.response?.status;
-    const message =
-      error.response?.data?.message ||
-      error.response?.data?.error ||
-      error.message;
-    const code = error.response?.data?.code || error.response?.data?.error;
+    const responseError = normalizeApiErrorPayload(error.response?.data);
+    const message = responseError.message || error.message;
+    const code = responseError.code;
     const url = error.config?.url;
     const method = error.config?.method?.toUpperCase();
 

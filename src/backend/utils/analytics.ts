@@ -9,7 +9,7 @@ import {
 } from "../database/repositories/factory.js";
 import { Logger } from "./logger.js";
 
-export const analyticsLogger = new Logger("ANALYTICS", "📈", "#06b6d4");
+export const analyticsLogger = new Logger("ANALYTICS", "#06b6d4");
 
 const FEATURE_ACTIVITY_TYPES = [
   "terminal",
