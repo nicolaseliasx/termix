@@ -6,7 +6,8 @@ Concluir no worktree remoto `/home/admin/termix` a camada backend de lifecycle e
 
 ## Contexto
 
-- Acesso: `ssh -o BatchMode=yes admin@192.168.15.4`; `rtk` existe apenas na máquina controladora, não no host remoto.
+- Acesso: use o alias SSH local do host; `rtk` existe apenas na máquina controladora,
+  não no host remoto. Nunca registre o endereço privado no repositório.
 - Branch `fork/baseline`, worktree sujo com mudanças legítimas de Phase 0–1 e fundação Phase 2. Preserve tudo; não faça reset, stage, commit ou push.
 - Já existem `persistent_sessions`, `persistent_session_events`, runtime migration SQLite, schemas gerados, repository/factory e `src/backend/hosts/sessions/{types,registry,tmux-adapter,index}.ts`.
 - Validações anteriores: schema check, type-check Node 24 e session-manager tests passaram.

@@ -1,45 +1,49 @@
+name: tserver
+
 services:
-  termix:
+  tserver:
+    image: tserver:latest
     build:
       context: ..
       dockerfile: docker/Dockerfile
-    container_name: termix
+    container_name: tserver
     restart: unless-stopped
     ports:
-      - "8080:8080"
-      - "8443:8443"
+      - "127.0.0.1:8443:8443"
     volumes:
-      - termix-data:/app/data
+      - tserver-data:/app/data
     environment:
       PORT: "8080"
       ENABLE_SSL: "true"
       SSL_PORT: "8443"
-      SSL_DOMAIN: "192.168.15.4"
-      GUACD_HOST: "guacd"
-      GUACD_TUNNEL_HOST: "termix"
-      GUACD_RECORDING_PATH: "/termix-data/session_recordings/guacamole"
+      SSL_DOMAIN: "tserver.ncls.cc"
+      GUACD_HOST: "tserver-guacd"
+      GUACD_TUNNEL_HOST: "tserver"
+      GUACD_RECORDING_PATH: "/tserver-data/session_recordings/guacamole"
       ENABLE_TELEMETRY: "false"
       ALLOW_REGISTRATION: "false"
       PUID: "1001"
       PGID: "1001"
     depends_on:
-      - guacd
+      - tserver-guacd
     networks:
-      - termix-net
+      - tserver-net
 
-  guacd:
+  tserver-guacd:
     image: guacamole/guacd:1.6.0
-    container_name: guacd
+    container_name: tserver-guacd
     restart: unless-stopped
     volumes:
-      - termix-data:/termix-data
+      - tserver-data:/tserver-data
     networks:
-      - termix-net
+      - tserver-net
 
 volumes:
-  termix-data:
+  tserver-data:
     driver: local
+    name: tserver-data
 
 networks:
-  termix-net:
+  tserver-net:
     driver: bridge
+    name: tserver-net

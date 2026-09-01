@@ -34,6 +34,11 @@ electron/build-info.cjs
 /.mcp.json
 /CLAUDE.md
 /old_db/
+/.codex/
+/.opencode/
+/backups/
+/docker/docker-compose.lan.yml
+__pycache__/
 /scripts/auto-fix.mjs
 /scripts/auto-fix-blocklist.json
 /scripts/auto-fix-state.json

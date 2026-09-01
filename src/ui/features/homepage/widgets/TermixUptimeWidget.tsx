@@ -132,7 +132,7 @@ function TermixUptimeWidget({
 registerWidget<TermixUptimeConfig>({
   id: "termix_uptime",
   name: "Termix Uptime",
-  description: "Shows how long the Termix server has been running",
+  description: "Shows how long the Termix instance has been running",
   category: "system",
   icon: <Clock4 size={14} />,
   defaultConfig: { showDetailed: false },

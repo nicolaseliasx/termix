@@ -77,7 +77,7 @@ P7 dep cleanup, P8 hardening/tests.
 ### 2026-08-25 — Phase 0 / T0.2 — Deploy docs + this log
 
 - What: created `docs/fork/DEPLOY.md` (compose local profile, guacd 1.6.0, ports
-  8080/8443, ENABLE_SSL=true, SSL_DOMAIN=192.168.15.4, ALLOW_REGISTRATION=false,
+  8080/8443, ENABLE_SSL=true, SSL_DOMAIN set locally, ALLOW_REGISTRATION=false,
   PUID/PGID 1001, termix-data volume, entrypoint SAN-IP diff, self-signed HTTPS
   LAN note, future Tailscale) and `docs/fork/LOG.md` (this handover log).
 - Files: `docs/fork/DEPLOY.md`, `docs/fork/LOG.md`.
