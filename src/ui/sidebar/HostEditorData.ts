@@ -113,9 +113,14 @@ export function createHostEditorForm(
   const rawTheme = terminalConfig.theme ?? d?.theme;
   const normalizedTheme =
     !rawTheme ||
-    ["Termix Dark", "Termix Light", "termixDark", "termixLight"].includes(
-      rawTheme,
-    )
+    [
+      "Termix Dark",
+      "Termix Light",
+      "Termix Dark",
+      "Termix Light",
+      "termixDark",
+      "termixLight",
+    ].includes(rawTheme)
       ? "termix"
       : rawTheme === "custom" || TERMINAL_THEMES[rawTheme]
         ? rawTheme

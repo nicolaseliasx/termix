@@ -41,6 +41,12 @@ import { useUiPreferencesContext } from "@/contexts/UiPreferencesContext";
 import { defaultSizes, SplitView, type RowColSizes } from "@/shell/SplitView";
 import { renderTabContent } from "@/shell/tabUtils";
 import { TabBar } from "@/shell/TabBar";
+import { getMobileVisualViewportCssValues } from "@/shell/mobile-visual-viewport";
+import {
+  readPersistentSessionTabCache,
+  writePersistentSessionTabCache,
+} from "@/features/sessions/persistent-session-tab-cache";
+import { listPersistentSessions } from "@/api/persistent-sessions-api";
 
 // Shell surfaces that are not needed for first paint.
 const CommandPalette = lazy(() =>
@@ -258,6 +264,8 @@ export function AppShell({
   const [hostsLoaded, setHostsLoaded] = useState(false);
   // Flips to true once the initial DB read (restore or skip) is done — sync must not fire before this
   const [tabsReady, setTabsReady] = useState(false);
+  const [persistentSessionCacheReady, setPersistentSessionCacheReady] =
+    useState(false);
   const [commandPaletteOpen, setCommandPaletteOpen] = useState(false);
   const [splitMode, setSplitMode] = useState<SplitMode>("none");
   // paneTabIds holds live tab.id values, which change on every restore, so we
@@ -428,6 +436,55 @@ export function AppShell({
   const isMobile = useIsMobile();
   const isSettingsView =
     railView === "user-profile" || railView === "admin-settings";
+
+  useEffect(() => {
+    if (!isMobile || !window.visualViewport) return;
+
+    const viewport = window.visualViewport;
+    const root = document.documentElement;
+    let frameId: number | null = null;
+    const settleTimeoutIds = new Set<number>();
+
+    const applyViewport = () => {
+      frameId = null;
+      const values = getMobileVisualViewportCssValues(viewport);
+      root.style.setProperty("--termix-visual-viewport-height", values.height);
+    };
+
+    const scheduleViewportUpdate = () => {
+      if (frameId !== null) cancelAnimationFrame(frameId);
+      frameId = requestAnimationFrame(applyViewport);
+    };
+
+    const scheduleSettledViewportUpdate = () => {
+      scheduleViewportUpdate();
+      for (const delay of [100, 300, 600]) {
+        const timeoutId = window.setTimeout(() => {
+          settleTimeoutIds.delete(timeoutId);
+          scheduleViewportUpdate();
+        }, delay);
+        settleTimeoutIds.add(timeoutId);
+      }
+    };
+
+    applyViewport();
+    viewport.addEventListener("resize", scheduleViewportUpdate);
+    viewport.addEventListener("scroll", scheduleViewportUpdate);
+    window.addEventListener("orientationchange", scheduleViewportUpdate);
+    document.addEventListener("focusin", scheduleViewportUpdate);
+    document.addEventListener("focusout", scheduleSettledViewportUpdate);
+
+    return () => {
+      if (frameId !== null) cancelAnimationFrame(frameId);
+      viewport.removeEventListener("resize", scheduleViewportUpdate);
+      viewport.removeEventListener("scroll", scheduleViewportUpdate);
+      window.removeEventListener("orientationchange", scheduleViewportUpdate);
+      document.removeEventListener("focusin", scheduleViewportUpdate);
+      document.removeEventListener("focusout", scheduleSettledViewportUpdate);
+      for (const timeoutId of settleTimeoutIds) clearTimeout(timeoutId);
+      root.style.removeProperty("--termix-visual-viewport-height");
+    };
+  }, [isMobile]);
 
   useEffect(() => {
     if (!settingsFullscreen) return;
@@ -883,8 +940,8 @@ export function AppShell({
         duration: Infinity,
         dismissible: false,
         action: {
-          label: t("common.reload"),
-          onClick: () => window.location.reload(),
+          label: "Retry health check",
+          onClick: () => void dbHealthMonitor.retryHealth(),
         },
       });
     };
@@ -1297,6 +1354,9 @@ export function AppShell({
             .filter((s) => s.tabInstanceId != null)
             .map((s) => [s.tabInstanceId, s]),
         );
+        const cachedPersistentTabInstanceIds = new Set(
+          readPersistentSessionTabCache().map((tab) => tab.instanceId),
+        );
 
         if (userPrefs.reopenTabsOnLogin) {
           const hasPersistentTabs = tabs.some((t) =>
@@ -1305,6 +1365,7 @@ export function AppShell({
           if (!hasPersistentTabs) {
             const restoredTabs: Tab[] = [];
             for (const saved of savedTabs as OpenTabRecord[]) {
+              if (cachedPersistentTabInstanceIds.has(saved.id)) continue;
               const host = saved.hostId
                 ? allHosts.find((h) => h.id === String(saved.hostId))
                 : undefined;
@@ -1664,6 +1725,101 @@ export function AppShell({
     return tabId;
   }, []);
 
+  // Persistent tmux tabs carry a server session id that the generic open-tabs
+  // record does not store. Keep that small client-side mapping, then reconcile
+  // it with the server on the next launch so deleted sessions are never reopened.
+  const persistentSessionRestoreAttemptedRef = useRef(false);
+  useEffect(() => {
+    if (!hostsLoaded || persistentSessionRestoreAttemptedRef.current) return;
+    persistentSessionRestoreAttemptedRef.current = true;
+
+    async function restorePersistentSessionTabs() {
+      let cacheReconciled = false;
+      try {
+        const cachedTabs = readPersistentSessionTabCache();
+        if (cachedTabs.length === 0) {
+          cacheReconciled = true;
+          return;
+        }
+        const page = await listPersistentSessions();
+        cacheReconciled = true;
+        const activeSessionIds = new Set(
+          page.data
+            .filter((session) => !session.endedAt)
+            .map((session) => session.id),
+        );
+        const restoredTabs = cachedTabs.flatMap((cached, index) => {
+          const host = allHosts.find(
+            (item) => item.id === String(cached.hostId),
+          );
+          if (!host || !activeSessionIds.has(cached.sessionId)) return [];
+          const id = `${host.name}-terminal-${Date.now()}-${index}`;
+          return [
+            {
+              id,
+              instanceId: cached.instanceId,
+              type: "terminal" as const,
+              label: cached.label,
+              customLabel: cached.label,
+              host,
+              openedAt: Date.now(),
+              terminalRef: createRef(),
+              restoredSessionId: null,
+              persistentSessionId: cached.sessionId,
+              persistentClientId: cached.clientId,
+              persistentRole: cached.role,
+              persistentTakeover: cached.takeover,
+            },
+          ];
+        });
+        if (restoredTabs.length === 0) return;
+        setTabs((current) => {
+          const openPersistentSessions = new Set(
+            current.map((tab) => tab.persistentSessionId).filter(Boolean),
+          );
+          const newTabs = restoredTabs.filter(
+            (tab) => !openPersistentSessions.has(tab.persistentSessionId),
+          );
+          return newTabs.length > 0 ? [...current, ...newTabs] : current;
+        });
+        setActiveTabId(restoredTabs[0].id);
+      } catch {
+        // A failed restore must not prevent normal tab startup.
+      } finally {
+        if (cacheReconciled) setPersistentSessionCacheReady(true);
+      }
+    }
+
+    void restorePersistentSessionTabs();
+  }, [allHosts, hostsLoaded]);
+
+  useEffect(() => {
+    if (!persistentSessionCacheReady) return;
+    writePersistentSessionTabCache(
+      tabs.flatMap((tab) => {
+        if (
+          tab.type !== "terminal" ||
+          !tab.persistentSessionId ||
+          !tab.host ||
+          !tab.instanceId
+        ) {
+          return [];
+        }
+        return [
+          {
+            sessionId: tab.persistentSessionId,
+            hostId: Number(tab.host.id),
+            label: tab.label,
+            clientId: tab.persistentClientId ?? tab.instanceId,
+            role: tab.persistentRole ?? "writer",
+            takeover: tab.persistentTakeover ?? false,
+            instanceId: tab.instanceId,
+          },
+        ];
+      }),
+    );
+  }, [persistentSessionCacheReady, tabs]);
+
   function connectHost(host: Host, preferredType?: TabType) {
     const type = resolveHostTabType(host, preferredType);
     // --- tmux-monitor --- singleton tab, not a per-host tab
@@ -1984,7 +2140,12 @@ export function AppShell({
   function closeTab(id: string) {
     const tab = tabs.find((t) => t.id === id);
     const confirmEnabled = localStorage.getItem("confirmTabClose") === "true";
-    if (tab && confirmEnabled && isActiveConnectionTab(tab)) {
+    if (
+      tab &&
+      !tab.persistentSessionId &&
+      confirmEnabled &&
+      isActiveConnectionTab(tab)
+    ) {
       const closeLabel = getTabCloseLabel(tab);
       const toastId = `close-tab-${id}`;
       toast(
@@ -2333,6 +2494,15 @@ export function AppShell({
         {railView === "sessions" && (
           <SessionsPanel
             onRegisterRefresh={registerSessionsRefresh}
+            onTerminate={(session) => {
+              tabsRef.current
+                .filter(
+                  (tab) =>
+                    tab.type === "terminal" &&
+                    tab.persistentSessionId === session.id,
+                )
+                .forEach((tab) => doCloseTab(tab.id));
+            }}
             onAttach={(session, host) => {
               const existing = tabsRef.current.find(
                 (tab) =>
@@ -2784,8 +2954,12 @@ export function AppShell({
   return (
     <ServerStatusProvider isAuthenticated={!!username}>
       <div
-        className="flex flex-col w-screen bg-background"
-        style={{ height: "100dvh" }}
+        className="flex w-screen flex-col overflow-hidden bg-background"
+        style={{
+          height: isMobile
+            ? "var(--termix-visual-viewport-height, 100dvh)"
+            : "100dvh",
+        }}
       >
         {isElectron() && (
           <>

@@ -10,6 +10,16 @@ import {
 } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/button";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/alert-dialog";
 import { getSSHHosts } from "@/main-axios";
 import { sshHostToHost } from "@/sidebar/HostManagerData";
 import { SectionCard } from "@/components/section-card";
@@ -18,10 +28,16 @@ import {
   createPersistentSession,
   killPersistentSession,
   listPersistentSessions,
-  reconcilePersistentSessions,
   patchPersistentSession,
   type PersistentSession,
 } from "@/api/persistent-sessions-api";
+import { useOptionalServerStatus } from "@/lib/ServerStatusContext";
+
+type HostAvailability =
+  "online" | "reachable" | "offline" | "degraded" | "checking" | "disabled";
+function formatHostStatus(status: HostAvailability): string {
+  return status === "disabled" ? "monitoring disabled" : status;
+}
 
 const formFieldClass =
   "h-8 w-full rounded-none border border-input bg-transparent px-2 text-xs outline-none transition-colors focus-visible:border-ring focus-visible:ring-1 focus-visible:ring-ring/50";
@@ -47,9 +63,11 @@ function errorText(error: unknown): string {
 }
 export function SessionsPanel({
   onAttach,
+  onTerminate,
   onRegisterRefresh,
 }: {
   onAttach: (session: PersistentSession, host: Host) => void;
+  onTerminate?: (session: PersistentSession) => void;
   /** Lets the shell header trigger the same refresh the panel polls with. */
   onRegisterRefresh?: (refresh: () => Promise<void>) => void;
 }) {
@@ -58,39 +76,70 @@ export function SessionsPanel({
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [creating, setCreating] = useState(false);
+  const [sessionToTerminate, setSessionToTerminate] =
+    useState<PersistentSession | null>(null);
+  const [terminating, setTerminating] = useState(false);
   const [hostId, setHostId] = useState("");
   const [name, setName] = useState("");
+  const serverStatus = useOptionalServerStatus();
+  const statuses = serverStatus?.statuses;
+  const getStatus = serverStatus?.getStatus;
+  const refreshStatuses = serverStatus?.refreshStatuses;
   const hostById = useMemo(
     () => new Map(hosts.map((host) => [Number(host.id), host])),
     [hosts],
   );
-  const refresh = useCallback(async (signal?: AbortSignal) => {
-    try {
-      setError(null);
-      const connectivity = await reconcilePersistentSessions(signal);
-      const [page, rawHosts] = await Promise.all([
-        listPersistentSessions(signal),
-        getSSHHosts(),
-      ]);
-      if (signal?.aborted) return;
-      const statusByHost = new Map(
-        connectivity.map((host) => [host.hostId, host.status]),
-      );
-      setSessions(page.data);
-      setHosts(
-        rawHosts.map(sshHostToHost).map((host) => ({
-          ...host,
-          online: statusByHost.get(Number(host.id)) === "online",
-        })),
-      );
-    } catch (reason) {
-      if (!signal?.aborted) setError(errorText(reason));
-    } finally {
-      if (!signal?.aborted) {
-        setLoading(false);
+  const getHostAvailability = useCallback(
+    (id: number): HostAvailability => {
+      const host = hostById.get(id);
+      if (host?.statsConfig?.statusCheckEnabled === false) return "disabled";
+      if (!serverStatus) {
+        const rawStatus = host?.status;
+        return rawStatus === "online" ||
+          rawStatus === "reachable" ||
+          rawStatus === "offline"
+          ? rawStatus
+          : "checking";
       }
+      if (statuses?.has(id)) return statuses.get(id)!.status;
+      return getStatus && serverStatus?.initialLoadComplete
+        ? getStatus(id)
+        : "checking";
+    },
+    [getStatus, hostById, serverStatus, statuses],
+  );
+  const onlineHosts = useMemo(
+    () =>
+      hosts.filter((host) => getHostAvailability(Number(host.id)) === "online"),
+    [getHostAvailability, hosts],
+  );
+  useEffect(() => {
+    if (hostId && getHostAvailability(Number(hostId)) !== "online") {
+      setHostId("");
     }
-  }, []);
+  }, [getHostAvailability, hostId]);
+  const refresh = useCallback(
+    async (signal?: AbortSignal) => {
+      try {
+        setError(null);
+        const [page, rawHosts] = await Promise.all([
+          listPersistentSessions(signal),
+          getSSHHosts({ includeStatus: false }),
+        ]);
+        if (signal?.aborted) return;
+        setSessions(page.data);
+        setHosts(rawHosts.map(sshHostToHost));
+        if (refreshStatuses) await refreshStatuses();
+      } catch (reason) {
+        if (!signal?.aborted) setError(errorText(reason));
+      } finally {
+        if (!signal?.aborted) {
+          setLoading(false);
+        }
+      }
+    },
+    [refreshStatuses],
+  );
   useEffect(() => {
     const controller = new AbortController();
     void refresh(controller.signal);
@@ -111,33 +160,43 @@ export function SessionsPanel({
     if (!hostId || !name.trim()) return;
     setCreating(true);
     try {
-      await createPersistentSession({
+      if (refreshStatuses) await refreshStatuses();
+      const currentStatus = getHostAvailability(Number(hostId));
+      if (currentStatus !== "online") {
+        throw new Error(
+          `Host is currently ${formatHostStatus(currentStatus)}. Wait until it is online and try again.`,
+        );
+      }
+      const session = await createPersistentSession({
         hostId: Number(hostId),
         displayName: name.trim(),
         tmuxSessionName: name.trim(),
       });
+      const host = hostById.get(session.hostId);
+      if (host) onAttach(session, host);
       setName("");
       await refresh();
-      toast.success("Persistent session created");
+      toast.success("Session has been created");
     } catch (reason) {
       toast.error(errorText(reason));
     } finally {
       setCreating(false);
     }
   }
-  async function terminate(session: PersistentSession) {
-    if (
-      !window.confirm(
-        `Terminate ${session.displayName}? The remote tmux process will be stopped.`,
-      )
-    )
-      return;
+  async function terminate() {
+    const session = sessionToTerminate;
+    if (!session) return;
+    setTerminating(true);
     try {
       await killPersistentSession(session.id);
+      onTerminate?.(session);
       await refresh();
       toast.success("Session terminated");
+      setSessionToTerminate(null);
     } catch (reason) {
       toast.error(errorText(reason));
+    } finally {
+      setTerminating(false);
     }
   }
   async function rename(session: PersistentSession) {
@@ -154,153 +213,196 @@ export function SessionsPanel({
     }
   }
   return (
-    <section
-      className="flex min-h-0 flex-1 flex-col overflow-y-auto p-3"
-      aria-label="Persistent sessions"
-    >
-      <SectionCard
-        title="Create session"
-        icon={<TerminalSquare className="size-4" />}
-        className="mb-4"
+    <>
+      <section
+        className="flex min-h-0 flex-1 flex-col overflow-y-auto p-3"
+        aria-label="Persistent sessions"
       >
-        <form
-          onSubmit={submit}
-          className="grid gap-2 py-2"
-          aria-label="Create persistent session"
+        <SectionCard
+          title="Create session"
+          icon={<TerminalSquare className="size-4" />}
+          className="mb-4"
         >
-          <label className="text-xs font-medium" htmlFor="persistent-host">
-            Host
-          </label>
-          <select
-            id="persistent-host"
-            className={formFieldClass}
-            value={hostId}
-            onChange={(event) => setHostId(event.target.value)}
-            required
+          <form
+            onSubmit={submit}
+            className="grid gap-2 py-2"
+            aria-label="Create persistent session"
           >
-            <option value="">Select a host</option>
-            {hosts.map((host) => (
-              <option value={host.id} key={host.id} disabled={!host.online}>
-                {host.name}
-                {host.online ? "" : " (offline)"}
+            <label className="text-xs font-medium" htmlFor="persistent-host">
+              Host
+            </label>
+            <select
+              id="persistent-host"
+              className={formFieldClass}
+              value={hostId}
+              onChange={(event) => setHostId(event.target.value)}
+              required
+            >
+              <option value="">
+                {onlineHosts.length === 0
+                  ? "No online hosts available"
+                  : "Select a host"}
               </option>
-            ))}
-          </select>
-          <label className="text-xs font-medium" htmlFor="persistent-name">
-            Name
-          </label>
-          <input
-            id="persistent-name"
-            className={formFieldClass}
-            value={name}
-            onChange={(event) => setName(event.target.value)}
-            pattern="[A-Za-z0-9][A-Za-z0-9._-]{0,63}"
-            required
-            placeholder="codex-termix"
-          />
-          <Button
-            type="submit"
-            size="sm"
-            className="bg-emerald-600 text-white hover:bg-emerald-700"
-            disabled={creating || !hostId || !name.trim()}
+              {onlineHosts.map((host) => (
+                <option value={host.id} key={host.id}>
+                  {host.name}
+                </option>
+              ))}
+            </select>
+            <label className="text-xs font-medium" htmlFor="persistent-name">
+              Name
+            </label>
+            <input
+              id="persistent-name"
+              className={formFieldClass}
+              value={name}
+              onChange={(event) => setName(event.target.value)}
+              pattern="[A-Za-z0-9][A-Za-z0-9._-]{0,63}"
+              required
+              placeholder="codex-termix"
+            />
+            <Button
+              type="submit"
+              size="sm"
+              className="bg-emerald-600 text-white hover:bg-emerald-700"
+              disabled={
+                creating ||
+                !hostId ||
+                !name.trim() ||
+                getHostAvailability(Number(hostId)) !== "online"
+              }
+            >
+              {creating ? (
+                <Loader2 className="size-4 animate-spin" />
+              ) : (
+                <Plus className="size-4" />
+              )}{" "}
+              Create session
+            </Button>
+          </form>
+        </SectionCard>
+        {error && (
+          <div
+            role="alert"
+            className="mb-3 flex gap-2 rounded border border-destructive/50 p-3 text-sm"
           >
-            {creating ? (
-              <Loader2 className="size-4 animate-spin" />
-            ) : (
-              <Plus className="size-4" />
-            )}{" "}
-            Create session
-          </Button>
-        </form>
-      </SectionCard>
-      {error && (
-        <div
-          role="alert"
-          className="mb-3 flex gap-2 rounded border border-destructive/50 p-3 text-sm"
-        >
-          <AlertCircle className="size-4 shrink-0" />
-          {error}
-        </div>
-      )}
-      {loading ? (
-        <div className="flex justify-center p-8">
-          <Loader2 className="animate-spin" />
-        </div>
-      ) : sessions.length === 0 ? (
-        <div className="border border-dashed p-6 text-center text-sm text-muted-foreground">
-          No persistent sessions yet. Create one to keep a terminal running when
-          you close the browser.
-        </div>
-      ) : (
-        <ul className="space-y-2" aria-live="polite">
-          {sessions.map((session) => {
-            const host = hostById.get(session.hostId);
-            const ended = Boolean(session.endedAt);
-            const offline = !host?.online;
-            return (
-              <li key={session.id}>
-                <SectionCard
-                  title={session.displayName}
-                  icon={<TerminalSquare className="size-4" />}
-                  action={
-                    <div className="flex gap-1">
-                      <Button
-                        size="icon"
-                        variant="ghost"
-                        title="Rename session"
-                        onClick={() => void rename(session)}
-                        disabled={ended}
-                      >
-                        ✎
-                      </Button>
-                      <Button
-                        size="icon"
-                        variant="ghost"
-                        title="Terminate remote session"
-                        onClick={() => void terminate(session)}
-                        disabled={ended}
-                      >
-                        <Trash2 className="size-4" />
-                      </Button>
+            <AlertCircle className="size-4 shrink-0" />
+            {error}
+          </div>
+        )}
+        {loading ? (
+          <div className="flex justify-center p-8">
+            <Loader2 className="animate-spin" />
+          </div>
+        ) : sessions.length === 0 ? (
+          <div className="border border-dashed p-6 text-center text-sm text-muted-foreground">
+            No persistent sessions yet. Create one to keep a terminal running
+            when you close the browser.
+          </div>
+        ) : (
+          <ul className="space-y-2" aria-live="polite">
+            {sessions.map((session) => {
+              const host = hostById.get(session.hostId);
+              const ended = Boolean(session.endedAt);
+              const status = host
+                ? getHostAvailability(Number(host.id))
+                : "offline";
+              return (
+                <li key={session.id}>
+                  <SectionCard
+                    title={session.displayName}
+                    icon={<TerminalSquare className="size-4" />}
+                    action={
+                      <div className="flex gap-1">
+                        <Button
+                          size="icon"
+                          variant="ghost"
+                          title="Rename session"
+                          onClick={() => void rename(session)}
+                          disabled={ended}
+                        >
+                          ✎
+                        </Button>
+                        <Button
+                          size="icon"
+                          variant="ghost"
+                          title="Terminate remote session"
+                          onClick={() => setSessionToTerminate(session)}
+                          disabled={ended}
+                        >
+                          <Trash2 className="size-4" />
+                        </Button>
+                      </div>
+                    }
+                  >
+                    <div className="py-2">
+                      <p className="truncate text-xs text-muted-foreground">
+                        {host?.name ?? `Host #${session.hostId}`}
+                      </p>
+                      <p className="mt-1 text-xs text-muted-foreground">
+                        {ended
+                          ? session.endReason || "terminated"
+                          : status === "online"
+                            ? "running"
+                            : formatHostStatus(status) +
+                              " · not available"}{" "}
+                        · {formatRuntime(session.createdAt)}
+                      </p>
+                      <div className="mt-3 flex flex-wrap gap-2">
+                        <Button
+                          size="sm"
+                          className="bg-emerald-600 text-white hover:bg-emerald-700"
+                          disabled={ended || status !== "online" || !host}
+                          onClick={() => host && onAttach(session, host)}
+                        >
+                          <TerminalSquare className="mr-1 size-4" />
+                          Attach
+                        </Button>
+                        {status !== "online" && (
+                          <span className="flex items-center gap-1 self-center text-xs text-muted-foreground">
+                            <WifiOff className="size-3" />
+                            Host {formatHostStatus(status)}
+                          </span>
+                        )}
+                      </div>
                     </div>
-                  }
-                >
-                  <div className="py-2">
-                    <p className="truncate text-xs text-muted-foreground">
-                      {host?.name ?? `Host #${session.hostId}`}
-                    </p>
-                    <p className="mt-1 text-xs text-muted-foreground">
-                      {ended
-                        ? session.endReason || "terminated"
-                        : offline
-                          ? "offline"
-                          : "running"}{" "}
-                      · {formatRuntime(session.createdAt)}
-                    </p>
-                    <div className="mt-3 flex flex-wrap gap-2">
-                      <Button
-                        size="sm"
-                        className="bg-emerald-600 text-white hover:bg-emerald-700"
-                        disabled={ended || offline || !host}
-                        onClick={() => host && onAttach(session, host)}
-                      >
-                        <TerminalSquare className="mr-1 size-4" />
-                        Attach
-                      </Button>
-                      {offline && (
-                        <span className="flex items-center gap-1 self-center text-xs text-muted-foreground">
-                          <WifiOff className="size-3" />
-                          Host offline
-                        </span>
-                      )}
-                    </div>
-                  </div>
-                </SectionCard>
-              </li>
-            );
-          })}
-        </ul>
-      )}
-    </section>
+                  </SectionCard>
+                </li>
+              );
+            })}
+          </ul>
+        )}
+      </section>
+      <AlertDialog
+        open={sessionToTerminate !== null}
+        onOpenChange={(open) => {
+          if (!open && !terminating) setSessionToTerminate(null);
+        }}
+      >
+        <AlertDialogContent className="rounded-none">
+          <AlertDialogHeader>
+            <AlertDialogTitle>Terminate session?</AlertDialogTitle>
+            <AlertDialogDescription>
+              {sessionToTerminate
+                ? `Terminate ${sessionToTerminate.displayName}? The remote tmux process will be stopped.`
+                : ""}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={terminating}>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+              disabled={terminating}
+              onClick={(event) => {
+                event.preventDefault();
+                void terminate();
+              }}
+            >
+              {terminating ? "Terminating…" : "Terminate"}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+    </>
   );
 }

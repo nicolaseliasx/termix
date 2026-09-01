@@ -542,7 +542,9 @@ function createApiInstance(
         logger.warn(`Slow request: ${responseTime}ms`, context);
       }
 
-      dbHealthMonitor.reportDatabaseSuccess();
+      if (!(response.config as AxiosRequestConfigExtended).__healthProbe) {
+        dbHealthMonitor.reportDatabaseSuccess();
+      }
 
       return response;
     },
@@ -651,7 +653,7 @@ function createApiInstance(
 
           userWasAuthenticated = false;
         }
-      } else if (!isSilentRetry) {
+      } else if (!isSilentRetry && !error.config?.__healthProbe) {
         dbHealthMonitor.reportDatabaseError(error);
       }
 
@@ -689,6 +691,7 @@ interface AxiosRequestConfigExtended extends InternalAxiosRequestConfig {
   startTime?: number;
   requestId?: string;
   __silentRetry?: boolean;
+  __healthProbe?: boolean;
 }
 
 interface AxiosErrorExtended extends AxiosError {
@@ -950,6 +953,21 @@ export let homepageApi: AxiosInstance;
 // Pre-initialize with default values to avoid undefined errors during early mounting
 initializeApiInstances();
 
+// Health confirmation must use the existing endpoint without feeding its
+// result back through the generic request interceptor.
+dbHealthMonitor.setHealthProbe(async (signal) => {
+  try {
+    const response = await authApi.get("/health", {
+      signal,
+      timeout: 3000,
+      __healthProbe: true,
+    } as unknown as AxiosRequestConfigExtended);
+    return response.status >= 200 && response.status < 300;
+  } catch {
+    return false;
+  }
+});
+
 let _resolveAppReady!: () => void;
 export const appReadyPromise: Promise<void> = new Promise((resolve) => {
   _resolveAppReady = resolve;
@@ -1070,7 +1088,7 @@ export function handleApiError(error: unknown, operation: string): never {
           errorContext,
         );
         throw new ApiError(
-          "No server configured. Please configure a Termix server first.",
+          "No server configured. Please configure a Termix instance first.",
           0,
           "NO_SERVER_CONFIGURED",
         );

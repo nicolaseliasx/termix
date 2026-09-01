@@ -33,6 +33,7 @@ export interface TerminalHandle {
   isConnected: () => boolean;
   fit: () => void;
   focus: () => void;
+  blur: () => void;
   sendInput: (data: string) => void;
   subscribeOutput: (listener: (data: string) => void) => () => void;
   paste: (text: string) => void;

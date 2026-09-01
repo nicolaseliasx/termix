@@ -70,3 +70,17 @@ describe("ensureTerminalFontsLoaded", () => {
     }
   });
 });
+
+describe("mobile terminal scrollbar styles", () => {
+  it("injects mobile-only rules for xterm's native and custom rails", async () => {
+    await import("../../../features/terminal/terminal-global-styles");
+
+    const styles = Array.from(document.head.querySelectorAll("style"));
+    const css = styles.map((style) => style.textContent ?? "").join("\n");
+
+    expect(css).toContain("@media (max-width: 767px)");
+    expect(css).toContain(".xterm .xterm-viewport::-webkit-scrollbar");
+    expect(css).toContain(".xterm-scrollable-element > .scrollbar");
+    expect(css).toContain(".xterm-decoration-overview-ruler");
+  });
+});

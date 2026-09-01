@@ -6,6 +6,7 @@ import {
   ChevronLeft,
   ChevronRight,
   Clipboard,
+  KeyboardOff,
   Pencil,
   X,
   Plus,
@@ -83,13 +84,11 @@ function saveQuickKeys(keys: string[]) {
 
 // Shared button styles
 const KEY_BASE =
-  "flex items-center justify-center rounded border transition-colors select-none touch-none active:scale-95 shrink-0";
+  "flex min-w-0 items-center justify-center rounded border transition-colors select-none touch-manipulation active:scale-95";
 const KEY_NORMAL = "border-border bg-muted/50 text-foreground hover:bg-muted";
 const KEY_ACTIVE =
   "border-accent-brand bg-accent-brand/20 text-accent-brand shadow-[0_0_0_1px_color-mix(in_oklab,var(--accent-brand)_30%,transparent)]";
-const KEY_MD = "h-9 px-3 min-w-[2.75rem] text-xs font-medium";
-const KEY_SM = "h-9 w-9";
-const SEP = "w-px h-5 bg-border mx-0.5 shrink-0";
+const KEY_GRID = "h-9 w-full px-0 text-[10px] font-medium";
 
 // --- QuickKeysSheet ---
 
@@ -221,11 +220,11 @@ function CtrlPanel({ onSend }: CtrlPanelProps) {
   const CTRL_KEYS = ["c", "d", "l", "u", "z", "a", "r", "w", "k"];
 
   return (
-    <div className="flex items-center gap-1 px-2 py-1 bg-muted/30 border-t border-border overflow-x-auto">
+    <div className="grid w-full min-w-0 grid-cols-9 gap-px border-t border-border bg-muted/30 px-0.5 py-1">
       {CTRL_KEYS.map((k) => (
         <button
           key={k}
-          className={cn(KEY_BASE, KEY_NORMAL, KEY_MD, "font-mono")}
+          className={cn(KEY_BASE, KEY_NORMAL, KEY_GRID, "font-mono")}
           onPointerDown={(e) => {
             e.preventDefault();
             onSend(k);
@@ -303,13 +302,17 @@ export function MobileTerminalKeyboard({
     saveQuickKeys(next);
   }
 
+  function dismissSoftwareKeyboard() {
+    terminalRef.current?.blur();
+  }
+
   return (
-    <div className="md:hidden flex flex-col bg-sidebar border-t border-border shrink-0">
+    <div className="flex w-full min-w-0 max-w-full shrink-0 flex-col overflow-hidden border-t border-border bg-sidebar md:hidden">
       {/* Row 1 — special keys */}
-      <div className="flex items-center gap-1 px-2 py-1.5 overflow-x-auto">
+      <div className="grid w-full min-w-0 grid-cols-9 gap-px px-0.5 py-1.5">
         {/* ESC */}
         <button
-          className={cn(KEY_BASE, KEY_NORMAL, KEY_MD)}
+          className={cn(KEY_BASE, KEY_NORMAL, KEY_GRID)}
           onPointerDown={(e) => {
             e.preventDefault();
             send("\x1b");
@@ -324,7 +327,7 @@ export function MobileTerminalKeyboard({
           className={cn(
             KEY_BASE,
             KEY_NORMAL,
-            KEY_MD,
+            KEY_GRID,
             shiftActive && "ring-1 ring-accent-brand/50",
           )}
           onPointerDown={(e) => {
@@ -338,7 +341,7 @@ export function MobileTerminalKeyboard({
 
         {/* Paste */}
         <button
-          className={cn(KEY_BASE, KEY_NORMAL, KEY_SM)}
+          className={cn(KEY_BASE, KEY_NORMAL, KEY_GRID)}
           onPointerDown={(e) => {
             e.preventDefault();
             handlePaste();
@@ -348,11 +351,55 @@ export function MobileTerminalKeyboard({
           <Clipboard className="size-4" />
         </button>
 
-        <div className={SEP} />
+        {/* Arrow keys */}
+        <button
+          className={cn(KEY_BASE, KEY_NORMAL, KEY_GRID)}
+          onPointerDown={(e) => {
+            e.preventDefault();
+            sendArrow("\x1b[A", "\x1bOA", "\x1b[1;2A");
+          }}
+          title={t("mobileKeyboard.arrowUp")}
+        >
+          <ChevronUp className="size-4" />
+        </button>
+        <button
+          className={cn(KEY_BASE, KEY_NORMAL, KEY_GRID)}
+          onPointerDown={(e) => {
+            e.preventDefault();
+            sendArrow("\x1b[B", "\x1bOB", "\x1b[1;2B");
+          }}
+          title={t("mobileKeyboard.arrowDown")}
+        >
+          <ChevronDown className="size-4" />
+        </button>
+        <button
+          className={cn(KEY_BASE, KEY_NORMAL, KEY_GRID)}
+          onPointerDown={(e) => {
+            e.preventDefault();
+            sendArrow("\x1b[D", "\x1bOD", "\x1b[1;2D");
+          }}
+          title={t("mobileKeyboard.arrowLeft")}
+        >
+          <ChevronLeft className="size-4" />
+        </button>
+        <button
+          className={cn(KEY_BASE, KEY_NORMAL, KEY_GRID)}
+          onPointerDown={(e) => {
+            e.preventDefault();
+            sendArrow("\x1b[C", "\x1bOC", "\x1b[1;2C");
+          }}
+          title={t("mobileKeyboard.arrowRight")}
+        >
+          <ChevronRight className="size-4" />
+        </button>
 
         {/* Ctrl */}
         <button
-          className={cn(KEY_BASE, KEY_MD, ctrlActive ? KEY_ACTIVE : KEY_NORMAL)}
+          className={cn(
+            KEY_BASE,
+            KEY_GRID,
+            ctrlActive ? KEY_ACTIVE : KEY_NORMAL,
+          )}
           onPointerDown={(e) => {
             e.preventDefault();
             toggleCtrl();
@@ -366,7 +413,7 @@ export function MobileTerminalKeyboard({
         <button
           className={cn(
             KEY_BASE,
-            KEY_MD,
+            KEY_GRID,
             shiftActive ? KEY_ACTIVE : KEY_NORMAL,
           )}
           onPointerDown={(e) => {
@@ -377,56 +424,13 @@ export function MobileTerminalKeyboard({
         >
           {t("mobileKeyboard.shift")}
         </button>
+      </div>
 
-        <div className={SEP} />
-
-        {/* Arrow keys */}
-        <button
-          className={cn(KEY_BASE, KEY_NORMAL, KEY_SM)}
-          onPointerDown={(e) => {
-            e.preventDefault();
-            sendArrow("\x1b[A", "\x1bOA", "\x1b[1;2A");
-          }}
-          title={t("mobileKeyboard.arrowUp")}
-        >
-          <ChevronUp className="size-4" />
-        </button>
-        <button
-          className={cn(KEY_BASE, KEY_NORMAL, KEY_SM)}
-          onPointerDown={(e) => {
-            e.preventDefault();
-            sendArrow("\x1b[B", "\x1bOB", "\x1b[1;2B");
-          }}
-          title={t("mobileKeyboard.arrowDown")}
-        >
-          <ChevronDown className="size-4" />
-        </button>
-        <button
-          className={cn(KEY_BASE, KEY_NORMAL, KEY_SM)}
-          onPointerDown={(e) => {
-            e.preventDefault();
-            sendArrow("\x1b[D", "\x1bOD", "\x1b[1;2D");
-          }}
-          title={t("mobileKeyboard.arrowLeft")}
-        >
-          <ChevronLeft className="size-4" />
-        </button>
-        <button
-          className={cn(KEY_BASE, KEY_NORMAL, KEY_SM)}
-          onPointerDown={(e) => {
-            e.preventDefault();
-            sendArrow("\x1b[C", "\x1bOC", "\x1b[1;2C");
-          }}
-          title={t("mobileKeyboard.arrowRight")}
-        >
-          <ChevronRight className="size-4" />
-        </button>
-
-        <div className={SEP} />
-
+      {/* Row 2 — navigation keys */}
+      <div className="grid w-full min-w-0 grid-cols-6 gap-px px-0.5 pb-1.5">
         {/* Home / End */}
         <button
-          className={cn(KEY_BASE, KEY_NORMAL, KEY_MD)}
+          className={cn(KEY_BASE, KEY_NORMAL, KEY_GRID)}
           onPointerDown={(e) => {
             e.preventDefault();
             send("\x1b[H");
@@ -436,7 +440,7 @@ export function MobileTerminalKeyboard({
           {t("mobileKeyboard.home")}
         </button>
         <button
-          className={cn(KEY_BASE, KEY_NORMAL, KEY_MD)}
+          className={cn(KEY_BASE, KEY_NORMAL, KEY_GRID)}
           onPointerDown={(e) => {
             e.preventDefault();
             send("\x1b[F");
@@ -446,11 +450,9 @@ export function MobileTerminalKeyboard({
           {t("mobileKeyboard.end")}
         </button>
 
-        <div className={SEP} />
-
         {/* PgUp / PgDn / Del */}
         <button
-          className={cn(KEY_BASE, KEY_NORMAL, KEY_MD)}
+          className={cn(KEY_BASE, KEY_NORMAL, KEY_GRID)}
           onPointerDown={(e) => {
             e.preventDefault();
             send("\x1b[5~");
@@ -460,7 +462,7 @@ export function MobileTerminalKeyboard({
           {t("mobileKeyboard.pageUp")}
         </button>
         <button
-          className={cn(KEY_BASE, KEY_NORMAL, KEY_MD)}
+          className={cn(KEY_BASE, KEY_NORMAL, KEY_GRID)}
           onPointerDown={(e) => {
             e.preventDefault();
             send("\x1b[6~");
@@ -470,7 +472,7 @@ export function MobileTerminalKeyboard({
           {t("mobileKeyboard.pageDown")}
         </button>
         <button
-          className={cn(KEY_BASE, KEY_NORMAL, KEY_MD)}
+          className={cn(KEY_BASE, KEY_NORMAL, KEY_GRID)}
           onPointerDown={(e) => {
             e.preventDefault();
             send("\x1b[3~");
@@ -479,17 +481,33 @@ export function MobileTerminalKeyboard({
         >
           {t("mobileKeyboard.delete")}
         </button>
+        <button
+          className={cn(KEY_BASE, KEY_NORMAL, KEY_GRID)}
+          onPointerDown={(event) => {
+            event.preventDefault();
+            dismissSoftwareKeyboard();
+          }}
+          title={t("mobileKeyboard.hideKeyboard")}
+          aria-label={t("mobileKeyboard.hideKeyboard")}
+        >
+          <KeyboardOff className="size-4" />
+        </button>
       </div>
 
       {/* Ctrl combos panel */}
       {ctrlActive && <CtrlPanel onSend={handleCtrlKey} />}
 
       {/* Row 2 — quick keys */}
-      <div className="flex items-center gap-1 px-2 pb-1.5 overflow-x-auto">
+      <div
+        className="grid w-full min-w-0 gap-px px-0.5 pb-1.5"
+        style={{
+          gridTemplateColumns: `repeat(${quickKeys.length + 1}, minmax(0, 1fr))`,
+        }}
+      >
         {quickKeys.map((sym, i) => (
           <button
             key={i}
-            className={cn(KEY_BASE, KEY_NORMAL, KEY_MD, "font-mono")}
+            className={cn(KEY_BASE, KEY_NORMAL, KEY_GRID, "truncate font-mono")}
             onPointerDown={(e) => {
               e.preventDefault();
               send(sym);
@@ -500,18 +518,16 @@ export function MobileTerminalKeyboard({
           </button>
         ))}
 
-        <div className="ml-auto shrink-0">
-          <button
-            className={cn(KEY_BASE, KEY_NORMAL, KEY_SM)}
-            onPointerDown={(e) => {
-              e.preventDefault();
-              setSheetOpen(true);
-            }}
-            title={t("mobileKeyboard.editQuickKeys")}
-          >
-            <Pencil className="size-3.5" />
-          </button>
-        </div>
+        <button
+          className={cn(KEY_BASE, KEY_NORMAL, KEY_GRID)}
+          onPointerDown={(e) => {
+            e.preventDefault();
+            setSheetOpen(true);
+          }}
+          title={t("mobileKeyboard.editQuickKeys")}
+        >
+          <Pencil className="size-3.5 max-w-full" />
+        </button>
       </div>
 
       <QuickKeysSheet

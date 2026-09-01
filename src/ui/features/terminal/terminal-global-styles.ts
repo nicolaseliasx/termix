@@ -59,6 +59,21 @@ style.innerHTML = `
   scrollbar-color: rgba(255,255,255,0.3) transparent;
 }
 
+@media (max-width: 767px) {
+  .xterm .xterm-viewport {
+    scrollbar-width: none;
+  }
+  .xterm .xterm-viewport::-webkit-scrollbar {
+    display: none;
+  }
+  .xterm-scrollable-element > .scrollbar {
+    display: none;
+  }
+  .xterm-decoration-overview-ruler {
+    display: none;
+  }
+}
+
 .xterm {
   font-feature-settings: "liga" 0, "calt" 0;
   text-rendering: optimizeLegibility;

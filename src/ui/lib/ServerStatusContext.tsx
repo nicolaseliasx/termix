@@ -126,10 +126,12 @@ export function ServerStatusProvider({
             Object.entries(data).forEach(([idStr, statusData]) => {
               const id = parseInt(idStr, 10);
               if (!isNaN(id)) {
+                const rawStatus = statusData?.status as string;
                 const status =
-                  statusData?.status === "online" ||
-                  statusData?.status === "reachable"
-                    ? statusData.status
+                  rawStatus === "online" ||
+                  rawStatus === "reachable" ||
+                  rawStatus === "degraded"
+                    ? (rawStatus as StatusValue)
                     : "offline";
                 newStatuses.set(id, {
                   status,
@@ -259,6 +261,11 @@ export function useServerStatus() {
     );
   }
   return context;
+}
+
+/** Optional variant for leaf panels rendered in isolated tests. */
+export function useOptionalServerStatus(): ServerStatusContextType | null {
+  return useContext(ServerStatusContext);
 }
 
 /**

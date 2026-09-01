@@ -4432,6 +4432,7 @@
     "pageDown": "PgDn",
     "delete": "Del",
     "paste": "Colar",
+    "hideKeyboard": "Ocultar teclado",
     "editQuickKeys": "Editar teclas de atalho",
     "quickKeysTitle": "Teclas de atalho",
     "quickKeysDesc": "Toque em × para remover. Suporta até 8 caracteres.",

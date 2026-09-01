@@ -1,74 +1,70 @@
-/**
- * DatabaseHealthMonitor
- *
- * Non-blocking health tracker for backend/database connectivity. The
- * monitor no longer gates the whole UI: there is no full-screen overlay.
- * When a transient failure is observed we emit a "degraded" event so the
- * UI can surface a persistent but non-intrusive toast. A success from any
- * API request clears the state. Session-expired events are also relayed
- * to the UI.
- *
- * The previous "database-connection-lost" / "database-connection-restored"
- * events have been retired along with the overlay. Listeners should use
- * "database-connection-degraded" / "database-connection-degraded-cleared"
- * to reflect the current UX contract: users can keep working regardless
- * of backend hiccups and are simply informed via a toast.
- */
+/** Confirmation-based monitor for backend availability. */
 import { normalizeApiErrorPayload } from "./api-error-payload";
 
 type EventListener = (...args: unknown[]) => void;
+type HealthProbe = (signal: AbortSignal) => Promise<boolean>;
 
 interface HttpLikeError {
   message?: string;
   code?: string;
+  name?: string;
   response?: {
     data?: unknown;
   };
+  config?: { signal?: AbortSignal };
 }
+
+const PROBE_TIMEOUT_MS = 3_000;
+const CONFIRMATION_GAP_MS = 2_000;
+const RETRY_DELAYS_MS = [5_000, 10_000, 30_000];
 
 class DatabaseHealthMonitor {
   private static instance: DatabaseHealthMonitor;
-  private listeners: Map<string, EventListener[]> = new Map();
-  private degradedActive: boolean = false;
+  private listeners = new Map<string, EventListener[]>();
+  private degradedActive = false;
+  private confirmation: Promise<void> | null = null;
+  private retryTimer: ReturnType<typeof setTimeout> | null = null;
+  private retryFlight: Promise<boolean> | null = null;
+  private retryAttempt = 0;
+  private probe: HealthProbe = async (signal) => {
+    const response = await fetch("/health", {
+      credentials: "include",
+      signal,
+    });
+    return response.ok;
+  };
 
   private constructor() {}
 
   static getInstance(): DatabaseHealthMonitor {
-    if (!DatabaseHealthMonitor.instance) {
-      DatabaseHealthMonitor.instance = new DatabaseHealthMonitor();
-    }
-    return DatabaseHealthMonitor.instance;
+    return (DatabaseHealthMonitor.instance ??= new DatabaseHealthMonitor());
+  }
+
+  setHealthProbe(probe: HealthProbe): void {
+    this.probe = probe;
   }
 
   on(event: string, listener: EventListener): void {
-    if (!this.listeners.has(event)) {
-      this.listeners.set(event, []);
-    }
-    this.listeners.get(event)!.push(listener);
+    const listeners = this.listeners.get(event) ?? [];
+    listeners.push(listener);
+    this.listeners.set(event, listeners);
   }
 
   off(event: string, listener: EventListener): void {
-    const eventListeners = this.listeners.get(event);
-    if (eventListeners) {
-      const index = eventListeners.indexOf(listener);
-      if (index !== -1) {
-        eventListeners.splice(index, 1);
-      }
-    }
+    const listeners = this.listeners.get(event);
+    const index = listeners?.indexOf(listener) ?? -1;
+    if (listeners && index >= 0) listeners.splice(index, 1);
   }
 
   private emit(event: string, ...args: unknown[]): void {
-    const eventListeners = this.listeners.get(event);
-    if (eventListeners) {
-      eventListeners.forEach((listener) => listener(...args));
-    }
+    this.listeners.get(event)?.forEach((listener) => listener(...args));
   }
 
   reportSessionExpired() {
     this.emit("session-expired", { timestamp: Date.now() });
   }
 
-  reportDatabaseError(error: unknown) {
+  reportDatabaseError(error: unknown): void {
     const errorLike = error as HttpLikeError;
     const responseError = normalizeApiErrorPayload(errorLike.response?.data);
     const errorMessage =
@@ -76,6 +72,15 @@ class DatabaseHealthMonitor {
       (typeof errorLike.message === "string" ? errorLike.message : "");
     const errorCode = responseError.code || errorLike.code;
     const lowerMessage = errorMessage.toLowerCase();
+    const cancelled =
+      errorCode === "ERR_CANCELED" ||
+      errorLike.name === "CanceledError" ||
+      errorLike.name === "AbortError" ||
+      errorLike.config?.signal?.aborted ||
+      lowerMessage.includes("canceled") ||
+      lowerMessage.includes("cancelled") ||
+      lowerMessage.includes("aborted");
+    if (cancelled) return;
 
     const isDatabaseError =
       lowerMessage.includes("database") ||
@@ -90,41 +95,119 @@ class DatabaseHealthMonitor {
       errorCode === "ECONNABORTED" ||
       errorCode === "ECONNRESET" ||
       errorCode === "ETIMEDOUT" ||
-      errorCode === "ERR_CANCELED" ||
       (lowerMessage.includes("network error") &&
         errorLike.response === undefined) ||
-      lowerMessage.includes("request aborted") ||
       lowerMessage.includes("timeout");
 
-    if (!(isDatabaseError || isBackendUnreachable)) {
+    // An explicit database error is already a backend-originated diagnosis;
+    // retain the existing immediate signal for callers that handle this
+    // distinct case. Transport/network suspicions require health confirmation.
+    if (isDatabaseError && !this.degradedActive) {
+      this.activateDegraded(errorMessage || "Database request failed");
       return;
     }
 
-    if (!this.degradedActive) {
-      this.degradedActive = true;
-      this.emit("database-connection-degraded", {
-        error: errorMessage || "Background request failed",
-        code: errorCode,
-        timestamp: Date.now(),
+    if (
+      !(isDatabaseError || isBackendUnreachable) ||
+      this.degradedActive ||
+      this.confirmation
+    ) {
+      return;
+    }
+
+    this.confirmation = this.confirmOutage(
+      errorMessage || "Background request failed",
+    )
+      .catch(() => {})
+      .finally(() => {
+        this.confirmation = null;
       });
+  }
+
+  private async runProbe(): Promise<boolean> {
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), PROBE_TIMEOUT_MS);
+    try {
+      return await this.probe(controller.signal);
+    } catch {
+      return false;
+    } finally {
+      clearTimeout(timeout);
     }
   }
 
-  reportDatabaseSuccess() {
-    if (this.degradedActive) {
-      this.degradedActive = false;
-      this.emit("database-connection-degraded-cleared", {
-        timestamp: Date.now(),
-      });
+  private async confirmOutage(message: string): Promise<void> {
+    if (await this.runProbe()) return;
+    await new Promise<void>((resolve) =>
+      setTimeout(resolve, CONFIRMATION_GAP_MS),
+    );
+    if (await this.runProbe()) return;
+    this.activateDegraded(message);
+  }
+
+  private activateDegraded(message: string): void {
+    if (this.degradedActive) return;
+    this.degradedActive = true;
+    this.retryAttempt = 0;
+    this.emit("database-connection-degraded", {
+      error: message,
+      timestamp: Date.now(),
+    });
+    this.scheduleRetry();
+  }
+
+  private scheduleRetry(): void {
+    if (!this.degradedActive || this.retryTimer) return;
+    const delay =
+      RETRY_DELAYS_MS[Math.min(this.retryAttempt, RETRY_DELAYS_MS.length - 1)];
+    this.retryAttempt += 1;
+    this.retryTimer = setTimeout(() => {
+      this.retryTimer = null;
+      void this.retryHealth();
+    }, delay);
+  }
+
+  async retryHealth(): Promise<boolean> {
+    if (!this.degradedActive) return true;
+    if (this.retryTimer) {
+      clearTimeout(this.retryTimer);
+      this.retryTimer = null;
     }
+    if (this.retryFlight) return this.retryFlight;
+    this.retryFlight = this.runProbe()
+      .then((healthy) => {
+        if (!healthy) return false;
+        this.degradedActive = false;
+        this.retryAttempt = 0;
+        this.emit("database-connection-degraded-cleared", {
+          timestamp: Date.now(),
+        });
+        return true;
+      })
+      .finally(() => {
+        this.retryFlight = null;
+      });
+    const healthy = await this.retryFlight;
+    if (!healthy) this.scheduleRetry();
+    return healthy;
+  }
+
+  /** Kept for interceptor compatibility; only /health may clear degraded. */
+  reportDatabaseSuccess(): void {
+    // Intentionally do nothing.
   }
 
   isDegraded(): boolean {
     return this.degradedActive;
   }
 
-  reset() {
+  reset(): void {
+    if (this.retryTimer) clearTimeout(this.retryTimer);
+    this.retryTimer = null;
+    this.confirmation = null;
+    this.retryFlight = null;
     this.degradedActive = false;
+    this.retryAttempt = 0;
   }
 }
 

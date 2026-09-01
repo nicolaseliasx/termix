@@ -4433,6 +4433,7 @@
     "pageDown": "PgDn",
     "delete": "Del",
     "paste": "Paste",
+    "hideKeyboard": "Hide keyboard",
     "editQuickKeys": "Edit quick keys",
     "quickKeysTitle": "Quick Keys",
     "quickKeysDesc": "Tap × to remove. Supports up to 8 characters.",

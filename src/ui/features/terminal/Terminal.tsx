@@ -96,10 +96,18 @@ import {
 import { SnippetVariablesDialog } from "@/components/SnippetVariablesDialog";
 import type { CustomKeybinding } from "@/types/keybindings";
 import { useConnectionDefaults } from "@/contexts/ConnectionDefaultsContext";
+import { useIsMobile } from "@/hooks/use-mobile";
 import {
   TerminalLocalEcho,
   resolveLocalEchoMode,
 } from "@/lib/terminal-local-echo";
+import { isIOSWebKitClient } from "./terminal-client-platform";
+import { isRecoverablePersistentSessionError } from "./terminal-persistent-session";
+import {
+  TerminalResizeCoordinator,
+  type TerminalDimensions,
+} from "./terminal-resize-coordinator";
+import { getTerminalOverviewRulerOptions } from "./terminal-options";
 export type { TerminalHandle, TerminalHostConfig } from "./terminal-types.ts";
 
 type HostKeyVerificationData = Omit<
@@ -174,6 +182,7 @@ const TerminalInner = forwardRef<TerminalHandle, SSHTerminalProps>(
   ) {
     const { t } = useTranslation();
     const { instance: terminal, ref: xtermRef } = useXTerm();
+    const isMobile = useIsMobile();
     const commandHistoryContext = useCommandHistory();
     const { confirmWithToast } = useConfirmation();
     const { theme: appTheme } = useTheme();
@@ -207,6 +216,7 @@ const TerminalInner = forwardRef<TerminalHandle, SSHTerminalProps>(
       ? "transparent"
       : themeColors.background;
     const fitAddonRef = useRef<FitAddon | null>(null);
+    const resizeCoordinatorRef = useRef(new TerminalResizeCoordinator());
     const webSocketRef = useRef<WebSocket | null>(null);
     const terminalInputDisposableRef = useRef<{ dispose(): void } | null>(null);
     const localEchoRef = useRef<TerminalLocalEcho | null>(null);
@@ -222,7 +232,6 @@ const TerminalInner = forwardRef<TerminalHandle, SSHTerminalProps>(
     const resizeTimeout = useRef<NodeJS.Timeout | null>(null);
     const wasDisconnectedBySSH = useRef(false);
     const pingIntervalRef = useRef<NodeJS.Timeout | null>(null);
-    const pongReceivedRef = useRef(true);
     const pongTimeoutRef = useRef<NodeJS.Timeout | null>(null);
     const [isConnected, setIsConnected] = useState(false);
     const [shareModalOpen, setShareModalOpen] = useState(false);
@@ -300,6 +309,9 @@ const TerminalInner = forwardRef<TerminalHandle, SSHTerminalProps>(
 
     const sessionIdRef = useRef<string | null>(null);
     const isAttachingSessionRef = useRef<boolean>(false);
+    const persistentReadOnlyRef = useRef(false);
+    const persistentTakeoverPendingRef = useRef(false);
+    const persistentReadOnlyWarningShownRef = useRef(false);
     // Consumed on first connectToHost call so retries don't re-attempt a stale session
     const pendingRestoredSessionIdRef = useRef<string | null>(
       hostConfig.restoredSessionId ?? null,
@@ -338,8 +350,9 @@ const TerminalInner = forwardRef<TerminalHandle, SSHTerminalProps>(
     const isVisibleRef = useRef<boolean>(false);
     const isFittingRef = useRef(false);
     const reconnectTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+    const stableAttachmentTimeoutRef = useRef<NodeJS.Timeout | null>(null);
     const reconnectAttempts = useRef(0);
-    const maxReconnectAttempts = 8;
+    const maxReconnectAttempts = 3;
     const isUnmountingRef = useRef(false);
     const shouldNotReconnectRef = useRef(false);
     const isReconnectingRef = useRef(false);
@@ -353,8 +366,15 @@ const TerminalInner = forwardRef<TerminalHandle, SSHTerminalProps>(
       isReconnectingRef.current = false;
       isConnectingRef.current = false;
       reconnectAttempts.current = 0;
+      if (stableAttachmentTimeoutRef.current) {
+        clearTimeout(stableAttachmentTimeoutRef.current);
+        stableAttachmentTimeoutRef.current = null;
+      }
       wasConnectedRef.current = false;
       isAttachingSessionRef.current = false;
+      persistentReadOnlyRef.current = false;
+      persistentTakeoverPendingRef.current = false;
+      persistentReadOnlyWarningShownRef.current = false;
 
       return () => {};
     }, [hostConfig.id]);
@@ -522,14 +542,7 @@ const TerminalInner = forwardRef<TerminalHandle, SSHTerminalProps>(
     const alternateScreenModeRef = useRef(false);
     const controlStringModeRef = useRef(false);
 
-    const lastSentSizeRef = useRef<{ cols: number; rows: number } | null>(null);
-    const pendingSizeRef = useRef<{ cols: number; rows: number } | null>(null);
-    const notifyTimerRef = useRef<NodeJS.Timeout | null>(null);
-    const lastFittedSizeRef = useRef<{ cols: number; rows: number } | null>(
-      null,
-    );
     const terminalFontSizeRef = useRef(config.fontSize);
-    const DEBOUNCE_MS = 140;
 
     const logTerminalActivity = async () => {
       if (
@@ -595,24 +608,24 @@ const TerminalInner = forwardRef<TerminalHandle, SSHTerminalProps>(
 
       try {
         fitAddonRef.current.fit();
-        if (terminal && terminal.cols > 0 && terminal.rows > 0) {
-          const lastSize = lastFittedSizeRef.current;
-          if (
-            !lastSize ||
-            lastSize.cols !== terminal.cols ||
-            lastSize.rows !== terminal.rows
-          ) {
-            scheduleNotify(terminal.cols, terminal.rows);
-            lastFittedSizeRef.current = {
-              cols: terminal.cols,
-              rows: terminal.rows,
-            };
-          }
+        if (terminal.cols > 0 && terminal.rows > 0) {
+          resizeCoordinatorRef.current.record({
+            cols: terminal.cols,
+            rows: terminal.rows,
+          });
+          flushPendingResize();
         }
         setIsFitted(true);
       } finally {
         isFittingRef.current = false;
       }
+    }
+
+    function flushPendingResize(ws = webSocketRef.current): void {
+      if (ws?.readyState !== WebSocket.OPEN) return;
+      const size = resizeCoordinatorRef.current.takePendingResize();
+      if (!size) return;
+      ws.send(JSON.stringify({ type: "resize", data: size }));
     }
 
     function changeTerminalFontSize(direction: -1 | 1) {
@@ -845,24 +858,6 @@ const TerminalInner = forwardRef<TerminalHandle, SSHTerminalProps>(
       if (onClose) onClose();
     }
 
-    function scheduleNotify(cols: number, rows: number) {
-      if (!(cols > 0 && rows > 0)) return;
-      pendingSizeRef.current = { cols, rows };
-      if (notifyTimerRef.current) clearTimeout(notifyTimerRef.current);
-      notifyTimerRef.current = setTimeout(() => {
-        const next = pendingSizeRef.current;
-        const last = lastSentSizeRef.current;
-        if (!next) return;
-        if (last && last.cols === next.cols && last.rows === next.rows) return;
-        if (webSocketRef.current?.readyState === WebSocket.OPEN) {
-          webSocketRef.current.send(
-            JSON.stringify({ type: "resize", data: next }),
-          );
-          lastSentSizeRef.current = next;
-        }
-      }, DEBOUNCE_MS);
-    }
-
     function formatTerminalOutput(output: string): string {
       const alternateScreen = updateAlternateScreenMode(
         output,
@@ -986,6 +981,10 @@ const TerminalInner = forwardRef<TerminalHandle, SSHTerminalProps>(
             clearTimeout(reconnectTimeoutRef.current);
             reconnectTimeoutRef.current = null;
           }
+          if (stableAttachmentTimeoutRef.current) {
+            clearTimeout(stableAttachmentTimeoutRef.current);
+            stableAttachmentTimeoutRef.current = null;
+          }
           if (connectionTimeoutRef.current) {
             clearTimeout(connectionTimeoutRef.current);
             connectionTimeoutRef.current = null;
@@ -1002,6 +1001,7 @@ const TerminalInner = forwardRef<TerminalHandle, SSHTerminalProps>(
             webSocketRef.current.send(JSON.stringify({ type: "disconnect" }));
           }
           sessionIdRef.current = null;
+          resizeCoordinatorRef.current.reset();
           webSocketRef.current?.close();
           setIsConnected(false);
           setIsConnecting(false);
@@ -1012,6 +1012,10 @@ const TerminalInner = forwardRef<TerminalHandle, SSHTerminalProps>(
           isReconnectingRef.current = false;
           isConnectingRef.current = false;
           reconnectAttempts.current = 0;
+          if (stableAttachmentTimeoutRef.current) {
+            clearTimeout(stableAttachmentTimeoutRef.current);
+            stableAttachmentTimeoutRef.current = null;
+          }
           wasDisconnectedBySSH.current = false;
           wasConnectedRef.current = false;
           updateConnectionError(null);
@@ -1029,26 +1033,13 @@ const TerminalInner = forwardRef<TerminalHandle, SSHTerminalProps>(
           isFittingRef.current = true;
           try {
             fitAddonRef.current.fit();
-            if (terminal.cols > 0 && terminal.rows > 0) {
-              const lastSize = lastFittedSizeRef.current;
-              if (
-                !lastSize ||
-                lastSize.cols !== terminal.cols ||
-                lastSize.rows !== terminal.rows
-              ) {
-                scheduleNotify(terminal.cols, terminal.rows);
-                lastFittedSizeRef.current = {
-                  cols: terminal.cols,
-                  rows: terminal.rows,
-                };
-              }
-            }
             setIsFitted(true);
           } finally {
             isFittingRef.current = false;
           }
         },
         focus: () => terminal?.focus(),
+        blur: () => terminal?.textarea?.blur(),
         sendInput: (data: string) => {
           if (webSocketRef.current?.readyState === 1) {
             webSocketRef.current.send(JSON.stringify({ type: "input", data }));
@@ -1066,7 +1057,8 @@ const TerminalInner = forwardRef<TerminalHandle, SSHTerminalProps>(
             const cols = terminal?.cols ?? undefined;
             const rows = terminal?.rows ?? undefined;
             if (typeof cols === "number" && typeof rows === "number") {
-              scheduleNotify(cols, rows);
+              resizeCoordinatorRef.current.record({ cols, rows });
+              flushPendingResize();
               hardRefresh();
             }
           } catch (error) {
@@ -1129,8 +1121,15 @@ const TerminalInner = forwardRef<TerminalHandle, SSHTerminalProps>(
 
       isReconnectingRef.current = true;
 
-      if (terminal && !isAttachingSessionRef.current) {
-        terminal.clear();
+      if (terminal) {
+        if (hostConfig.persistentSessionId) {
+          // A fresh tmux frame must start from a clean parser/buffer. Keeping
+          // the previous frame caused status bars and old text to accumulate
+          // when a persistent attachment was replaced.
+          terminal.reset();
+        } else if (!isAttachingSessionRef.current) {
+          terminal.clear();
+        }
       }
 
       reconnectAttempts.current++;
@@ -1179,17 +1178,21 @@ const TerminalInner = forwardRef<TerminalHandle, SSHTerminalProps>(
       }, delay);
     }
 
-    async function connectToHost(cols: number, rows: number) {
+    async function connectToHost(_cols: number, _rows: number) {
       if (isConnectingRef.current) {
         return;
       }
 
+      resizeCoordinatorRef.current.reset();
       isConnectingRef.current = true;
       connectionAttemptIdRef.current++;
       wasConnectedRef.current = false;
+      persistentReadOnlyRef.current = false;
+      persistentTakeoverPendingRef.current = false;
+      persistentReadOnlyWarningShownRef.current = false;
 
       if (!isReconnectingRef.current) {
-        reconnectAttempts.current = 0;
+        // A connection is only considered stable after the full grace period.
         shouldNotReconnectRef.current = false;
       }
 
@@ -1232,6 +1235,7 @@ const TerminalInner = forwardRef<TerminalHandle, SSHTerminalProps>(
         webSocketRef.current &&
         webSocketRef.current.readyState !== WebSocket.CLOSED
       ) {
+        resizeCoordinatorRef.current.reset();
         terminalInputDisposableRef.current?.dispose();
         terminalInputDisposableRef.current = null;
         webSocketRef.current.close();
@@ -1254,17 +1258,28 @@ const TerminalInner = forwardRef<TerminalHandle, SSHTerminalProps>(
       isReconnectingRef.current = false;
       setIsConnecting(true);
 
-      setupWebSocketListeners(ws, cols, rows);
+      setupWebSocketListeners(ws);
     }
 
-    function setupWebSocketListeners(
-      ws: WebSocket,
-      cols: number,
-      rows: number,
-    ) {
+    function setupWebSocketListeners(ws: WebSocket) {
+      const currentAttemptId = connectionAttemptIdRef.current;
+      const isCurrentSocket = () =>
+        currentAttemptId === connectionAttemptIdRef.current &&
+        webSocketRef.current === ws;
+
       ws.addEventListener("open", () => {
+        if (!isCurrentSocket()) {
+          ws.close(1000, "Superseded connection");
+          return;
+        }
         alternateScreenModeRef.current = false;
         controlStringModeRef.current = false;
+        fitAddonRef.current?.fit();
+        const connectionSize: TerminalDimensions = {
+          cols: terminal.cols,
+          rows: terminal.rows,
+        };
+        resizeCoordinatorRef.current.beginConnection(connectionSize);
         connectionTimeoutRef.current = setTimeout(() => {
           if (
             !isConnected &&
@@ -1316,6 +1331,11 @@ const TerminalInner = forwardRef<TerminalHandle, SSHTerminalProps>(
           );
         } else if (hostConfig.persistentSessionId) {
           isAttachingSessionRef.current = true;
+          const shouldTakeControl =
+            hostConfig.persistentTakeover || isIOSWebKitClient();
+          persistentTakeoverPendingRef.current = shouldTakeControl;
+          persistentReadOnlyRef.current =
+            shouldTakeControl || hostConfig.persistentRole === "viewer";
           ws.send(
             JSON.stringify({
               type: "persistent_attach",
@@ -1323,9 +1343,15 @@ const TerminalInner = forwardRef<TerminalHandle, SSHTerminalProps>(
                 persistentSessionId: hostConfig.persistentSessionId,
                 clientId:
                   hostConfig.persistentClientId ?? hostConfig.instanceId,
-                role: hostConfig.persistentRole ?? "writer",
-                cols,
-                rows,
+                // A takeover must attach read-only first; asking for a second
+                // writer is rejected before the control-transfer command can
+                // run. iOS resumes old tabs aggressively, so make its attach
+                // operation reclaim the persistent session deterministically.
+                role: shouldTakeControl
+                  ? "viewer"
+                  : (hostConfig.persistentRole ?? "writer"),
+                cols: connectionSize.cols,
+                rows: connectionSize.rows,
               },
             }),
           );
@@ -1338,8 +1364,8 @@ const TerminalInner = forwardRef<TerminalHandle, SSHTerminalProps>(
               type: "attachSession",
               data: {
                 sessionId: restoredSessionId,
-                cols,
-                rows,
+                cols: connectionSize.cols,
+                rows: connectionSize.rows,
                 tabInstanceId: hostConfig.instanceId,
               },
             }),
@@ -1350,8 +1376,8 @@ const TerminalInner = forwardRef<TerminalHandle, SSHTerminalProps>(
             JSON.stringify({
               type: "connectToHost",
               data: {
-                cols,
-                rows,
+                cols: connectionSize.cols,
+                rows: connectionSize.rows,
                 hostConfig,
                 initialPath,
                 executeCommand,
@@ -1369,6 +1395,7 @@ const TerminalInner = forwardRef<TerminalHandle, SSHTerminalProps>(
         );
         terminalInputDisposableRef.current = terminal.onData((data) => {
           if (ws.readyState !== WebSocket.OPEN) return;
+          if (persistentReadOnlyRef.current) return;
           if (data === "\r" || data === "\n") {
             const currentCmd = getCurrentCommand().trim();
             const termixMatch = currentCmd.match(/^termix\s+(.+)$/);
@@ -1393,27 +1420,25 @@ const TerminalInner = forwardRef<TerminalHandle, SSHTerminalProps>(
           ws.send(JSON.stringify({ type: "input", data }));
         });
 
-        pongReceivedRef.current = true;
         pingIntervalRef.current = setInterval(() => {
           if (ws.readyState === WebSocket.OPEN) {
-            if (!pongReceivedRef.current) {
-              console.warn(
-                "[WebSocket] Pong timeout - connection appears dead, closing",
-              );
-              ws.close();
-              return;
-            }
-            pongReceivedRef.current = false;
+            // Keep proxies and NAT mappings active. The server owns liveness
+            // detection with a multi-strike grace period, so one delayed app
+            // pong can no longer make the browser tear down a healthy terminal.
             ws.send(JSON.stringify({ type: "ping" }));
           }
         }, 30000);
       });
 
       ws.addEventListener("message", (event) => {
+        if (!isCurrentSocket()) return;
         try {
           const msg = JSON.parse(event.data);
+          if (pongTimeoutRef.current) {
+            clearTimeout(pongTimeoutRef.current);
+            pongTimeoutRef.current = null;
+          }
           if (msg.type === "pong") {
-            pongReceivedRef.current = true;
             return;
           }
           if (msg.type === "data") {
@@ -1513,8 +1538,19 @@ const TerminalInner = forwardRef<TerminalHandle, SSHTerminalProps>(
                 message: t("terminal.connected"),
               });
             }
-            reconnectAttempts.current = 0;
+            if (stableAttachmentTimeoutRef.current) {
+              clearTimeout(stableAttachmentTimeoutRef.current);
+            }
+            stableAttachmentTimeoutRef.current = setTimeout(() => {
+              stableAttachmentTimeoutRef.current = null;
+              if (wasConnectedRef.current && webSocketRef.current === ws) {
+                reconnectAttempts.current = 0;
+              }
+            }, 60_000);
             isReconnectingRef.current = false;
+
+            resizeCoordinatorRef.current.markRemoteReady();
+            flushPendingResize(ws);
 
             logTerminalActivity();
 
@@ -1574,21 +1610,23 @@ const TerminalInner = forwardRef<TerminalHandle, SSHTerminalProps>(
             wasDisconnectedBySSH.current = true;
             setIsConnected(false);
             setIsConnecting(false);
-            shouldNotReconnectRef.current = true;
+            shouldNotReconnectRef.current = false;
             if (onClose) {
               onClose();
             }
           } else if (msg.type === "disconnected") {
             wasDisconnectedBySSH.current = true;
-            shouldNotReconnectRef.current = true;
+            shouldNotReconnectRef.current = false;
             setIsConnected(false);
             setIsConnecting(false);
             if (msg.graceful) {
               wasConnectedRef.current = false;
               if (onClose) onClose();
             } else if (wasConnectedRef.current) {
+              wasDisconnectedBySSH.current = false;
               wasConnectedRef.current = false;
               setShowDisconnectedOverlay(true);
+              attemptReconnection();
             } else if (!connectionErrorRef.current) {
               updateConnectionError(
                 msg.message || t("terminal.connectionRejected"),
@@ -1958,8 +1996,30 @@ const TerminalInner = forwardRef<TerminalHandle, SSHTerminalProps>(
             }
           } else if (
             msg.type === "sessionAttached" ||
-            msg.type === "persistent_attached"
+            msg.type === "persistent_attached" ||
+            msg.type === "persistent_control_changed"
           ) {
+            if (msg.type === "persistent_attached") {
+              persistentReadOnlyRef.current = msg.role === "viewer";
+            } else if (msg.type === "persistent_control_changed") {
+              persistentTakeoverPendingRef.current = false;
+              persistentReadOnlyRef.current = false;
+              persistentReadOnlyWarningShownRef.current = false;
+            }
+
+            resizeCoordinatorRef.current.markRemoteReady();
+            flushPendingResize(ws);
+
+            if (
+              msg.type === "persistent_attached" &&
+              persistentTakeoverPendingRef.current
+            ) {
+              webSocketRef.current?.send(
+                JSON.stringify({ type: "persistent_take_control" }),
+              );
+              return;
+            }
+
             isAttachingSessionRef.current = false;
             opksshFailedRef.current = false;
             vaultFailedRef.current = false;
@@ -1977,7 +2037,15 @@ const TerminalInner = forwardRef<TerminalHandle, SSHTerminalProps>(
               clearTimeout(reconnectTimeoutRef.current);
               reconnectTimeoutRef.current = null;
             }
-            reconnectAttempts.current = 0;
+            if (stableAttachmentTimeoutRef.current) {
+              clearTimeout(stableAttachmentTimeoutRef.current);
+            }
+            stableAttachmentTimeoutRef.current = setTimeout(() => {
+              stableAttachmentTimeoutRef.current = null;
+              if (wasConnectedRef.current && webSocketRef.current === ws) {
+                reconnectAttempts.current = 0;
+              }
+            }, 60_000);
             isReconnectingRef.current = false;
 
             logTerminalActivity();
@@ -1987,15 +2055,26 @@ const TerminalInner = forwardRef<TerminalHandle, SSHTerminalProps>(
               stage: "connection",
               message: t("terminal.reconnected"),
             });
-            if (
-              msg.type === "persistent_attached" &&
-              hostConfig.persistentTakeover
-            ) {
-              webSocketRef.current?.send(
-                JSON.stringify({ type: "persistent_take_control" }),
-              );
-            }
           } else if (msg.type === "persistent_error") {
+            if (isRecoverablePersistentSessionError(msg.code)) {
+              persistentReadOnlyRef.current = true;
+              if (!persistentReadOnlyWarningShownRef.current) {
+                persistentReadOnlyWarningShownRef.current = true;
+                addLog({
+                  type: "warning",
+                  stage: "connection",
+                  message:
+                    typeof msg.message === "string"
+                      ? msg.message
+                      : "This device is read-only",
+                });
+              }
+              return;
+            }
+
+            persistentTakeoverPendingRef.current = false;
+            isAttachingSessionRef.current = false;
+            shouldNotReconnectRef.current = true;
             updateConnectionError(
               typeof msg.message === "string"
                 ? msg.message
@@ -2007,6 +2086,23 @@ const TerminalInner = forwardRef<TerminalHandle, SSHTerminalProps>(
             if (connectionTimeoutRef.current) {
               clearTimeout(connectionTimeoutRef.current);
               connectionTimeoutRef.current = null;
+            }
+            if (webSocketRef.current?.readyState === WebSocket.OPEN) {
+              webSocketRef.current.close(
+                1000,
+                "Persistent session unavailable",
+              );
+            }
+          } else if (msg.type === "persistent_control_revoked") {
+            persistentTakeoverPendingRef.current = false;
+            persistentReadOnlyRef.current = true;
+            if (!persistentReadOnlyWarningShownRef.current) {
+              persistentReadOnlyWarningShownRef.current = true;
+              addLog({
+                type: "warning",
+                stage: "connection",
+                message: "Session control moved to another device",
+              });
             }
           } else if (msg.type === "sessionExpired") {
             isAttachingSessionRef.current = false;
@@ -2094,13 +2190,12 @@ const TerminalInner = forwardRef<TerminalHandle, SSHTerminalProps>(
         }
       });
 
-      const currentAttemptId = connectionAttemptIdRef.current;
-
       ws.addEventListener("close", (event) => {
         if (currentAttemptId !== connectionAttemptIdRef.current) {
           return;
         }
 
+        resizeCoordinatorRef.current.reset();
         terminalInputDisposableRef.current?.dispose();
         terminalInputDisposableRef.current = null;
 
@@ -2167,24 +2262,6 @@ const TerminalInner = forwardRef<TerminalHandle, SSHTerminalProps>(
           setIsConnecting(false);
           shouldNotReconnectRef.current = true;
 
-          return;
-        }
-
-        if (
-          !wasConnectedRef.current &&
-          !isAttachingSessionRef.current &&
-          event.wasClean &&
-          (event.code === 1005 || event.code === 1000)
-        ) {
-          console.error("[WebSocket] Connection rejected by server");
-          addLog({
-            type: "error",
-            stage: "connection",
-            message: t("terminal.connectionRejected"),
-          });
-          updateConnectionError(t("terminal.connectionRejected"));
-          setIsConnecting(false);
-          shouldNotReconnectRef.current = true;
           return;
         }
 
@@ -2430,6 +2507,7 @@ const TerminalInner = forwardRef<TerminalHandle, SSHTerminalProps>(
         minimumContrastRatio: config.minimumContrastRatio,
         letterSpacing: config.letterSpacing,
         lineHeight: config.lineHeight,
+        overviewRuler: getTerminalOverviewRulerOptions(isMobile),
         theme: {
           background: config.backgroundImage
             ? "transparent"
@@ -2498,6 +2576,11 @@ const TerminalInner = forwardRef<TerminalHandle, SSHTerminalProps>(
 
       terminal.open(xtermRef.current);
 
+      const resizeDisposable = terminal.onResize(({ cols, rows }) => {
+        resizeCoordinatorRef.current.record({ cols, rows });
+        flushPendingResize();
+      });
+
       const xtermTextarea = xtermRef.current.querySelector("textarea");
       if (xtermTextarea) {
         xtermTextarea.setAttribute("autocomplete", "off");
@@ -2544,14 +2627,7 @@ const TerminalInner = forwardRef<TerminalHandle, SSHTerminalProps>(
       });
 
       fitAddonRef.current?.fit();
-      // Double-rAF ensures layout is fully settled (fonts, flexbox, etc.) before
-      // committing the fitted size, preventing the "terminal too short" glitch.
-      requestAnimationFrame(() => {
-        requestAnimationFrame(() => {
-          fitAddonRef.current?.fit();
-          setIsFitted(true);
-        });
-      });
+      setIsFitted(true);
 
       // Send one-finger drags through xterm's real wheel DOM path. This keeps
       // scrollback, alternate-buffer/tmux, mouse reporting and wheel remainder
@@ -2663,7 +2739,7 @@ const TerminalInner = forwardRef<TerminalHandle, SSHTerminalProps>(
         if (resizeTimeout.current) clearTimeout(resizeTimeout.current);
         resizeTimeout.current = setTimeout(() => {
           if (isVisibleRef.current) {
-            performFit();
+            fitAddonRef.current?.fit();
           }
         }, 50);
       });
@@ -2684,10 +2760,18 @@ const TerminalInner = forwardRef<TerminalHandle, SSHTerminalProps>(
         element?.removeEventListener("keydown", handleBackspaceMode, true);
         element?.removeEventListener("keydown", handleTabCapture, true);
         disposeTouchWheel();
-        if (notifyTimerRef.current) clearTimeout(notifyTimerRef.current);
+        resizeDisposable.dispose();
         if (resizeTimeout.current) clearTimeout(resizeTimeout.current);
       };
     }, [xtermRef, terminal]);
+
+    useEffect(() => {
+      if (!terminal) return;
+
+      terminal.options.overviewRuler =
+        getTerminalOverviewRulerOptions(isMobile);
+      fitAddonRef.current?.fit();
+    }, [terminal, isMobile]);
 
     const isMountedRef = useRef(false);
 
@@ -2718,6 +2802,8 @@ const TerminalInner = forwardRef<TerminalHandle, SSHTerminalProps>(
           setIsConnecting(false);
           if (reconnectTimeoutRef.current)
             clearTimeout(reconnectTimeoutRef.current);
+          if (stableAttachmentTimeoutRef.current)
+            clearTimeout(stableAttachmentTimeoutRef.current);
           if (connectionTimeoutRef.current)
             clearTimeout(connectionTimeoutRef.current);
           if (totpTimeoutRef.current) clearTimeout(totpTimeoutRef.current);
@@ -3233,23 +3319,59 @@ const TerminalInner = forwardRef<TerminalHandle, SSHTerminalProps>(
 
       setIsConnecting(true);
       fitAddonRef.current?.fit();
-      requestAnimationFrame(() => {
-        requestAnimationFrame(() => {
-          fitAddonRef.current?.fit();
-          if (terminal.cols > 0 && terminal.rows > 0) {
-            scheduleNotify(terminal.cols, terminal.rows);
-            connectToHost(terminal.cols, terminal.rows);
-          }
-        });
-      });
+      fitAddonRef.current?.fit();
+      if (terminal.cols > 0 && terminal.rows > 0) {
+        connectToHost(terminal.cols, terminal.rows);
+      }
     }, [terminal, hostConfig.id, isVisible, isConnected, isConnecting]);
+
+    useEffect(() => {
+      if (!terminal || !hostConfig || !isVisible) return;
+
+      const verifyConnectionAfterResume = () => {
+        if (document.visibilityState !== "visible") return;
+
+        const ws = webSocketRef.current;
+        if (ws?.readyState === WebSocket.OPEN) {
+          // The backend heartbeat already has a multi-strike grace period.
+          // A foreground event should wake the connection, not tear down a
+          // healthy but briefly slow socket and start a reconnect cascade.
+          ws.send(JSON.stringify({ type: "ping" }));
+          return;
+        }
+
+        if (ws?.readyState === WebSocket.CONNECTING) return;
+        attemptReconnection();
+      };
+
+      const handleVisibilityChange = () => {
+        if (document.visibilityState === "visible") {
+          verifyConnectionAfterResume();
+        }
+      };
+
+      document.addEventListener("visibilitychange", handleVisibilityChange);
+      window.addEventListener("pageshow", verifyConnectionAfterResume);
+      window.addEventListener("online", verifyConnectionAfterResume);
+
+      return () => {
+        document.removeEventListener(
+          "visibilitychange",
+          handleVisibilityChange,
+        );
+        window.removeEventListener("pageshow", verifyConnectionAfterResume);
+        window.removeEventListener("online", verifyConnectionAfterResume);
+        if (pongTimeoutRef.current) {
+          clearTimeout(pongTimeoutRef.current);
+          pongTimeoutRef.current = null;
+        }
+      };
+    }, [terminal, hostConfig.id, isVisible]);
 
     useEffect(() => {
       if (!terminal || !fitAddonRef.current) return;
 
       if (!isVisible) {
-        lastFittedSizeRef.current = null;
-        lastSentSizeRef.current = null;
         return;
       }
 
@@ -3488,10 +3610,10 @@ const TerminalInner = forwardRef<TerminalHandle, SSHTerminalProps>(
           status={
             showDisconnectedOverlay
               ? "disconnected"
-              : isConnecting
-                ? "connecting"
-                : hasConnectionError
-                  ? "error"
+              : hasConnectionError
+                ? "error"
+                : isConnecting
+                  ? "connecting"
                   : "connected"
           }
           message={t("terminal.connecting")}
