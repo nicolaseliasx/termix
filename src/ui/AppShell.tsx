@@ -33,6 +33,8 @@ import {
   railItemLabel,
   PROMOTABLE_IDS,
   RIGHT_DOCKABLE_IDS,
+  RAIL_UTILITY_ITEMS,
+  visibleRailItems,
 } from "@/sidebar/rail-items";
 import { MultiPanelHint } from "@/sidebar/MultiPanelHint";
 import { OnboardingDialog } from "@/onboarding/OnboardingDialog";
@@ -46,7 +48,10 @@ import {
   readPersistentSessionTabCache,
   writePersistentSessionTabCache,
 } from "@/features/sessions/persistent-session-tab-cache";
-import { listPersistentSessions } from "@/api/persistent-sessions-api";
+import {
+  listPersistentSessions,
+  type PersistentSession,
+} from "@/api/persistent-sessions-api";
 
 // Shell surfaces that are not needed for first paint.
 const CommandPalette = lazy(() =>
@@ -350,8 +355,20 @@ export function AppShell({
     return () => window.removeEventListener("termix:open-onboarding", handler);
   }, [loadOnboardingContext]);
 
-  const [sidebarOpen, setSidebarOpen] = useState(true);
-  const [railView, setRailView] = useState<RailView>("sessions");
+  // Left dock state restores exactly as it was left: no beforeunload prompt
+  // stands between the user and closing the window anymore.
+  const [sidebarOpen, setSidebarOpen] = useState(
+    () => localStorage.getItem("termix_sidebarOpen") !== "false",
+  );
+  const [railView, setRailView] = useState<RailView>(() => {
+    const saved = localStorage.getItem("termix_railView");
+    if (!saved) return "sessions";
+    const validViews = [
+      ...visibleRailItems().map((item) => item.id),
+      ...RAIL_UTILITY_ITEMS.map((item) => item.id),
+    ];
+    return validViews.includes(saved) ? (saved as RailView) : "sessions";
+  });
   // The sessions panel registers its refresh here so the sidebar header
   // button can drive the exact same reload (reconcile + list + hosts).
   const sessionsRefreshRef = useRef<(() => Promise<void>) | null>(null);
@@ -410,6 +427,14 @@ export function AppShell({
   useEffect(() => {
     localStorage.setItem("termix_sidebarWidth", String(sidebarWidth));
   }, [sidebarWidth]);
+
+  useEffect(() => {
+    localStorage.setItem("termix_sidebarOpen", String(sidebarOpen));
+  }, [sidebarOpen]);
+
+  useEffect(() => {
+    localStorage.setItem("termix_railView", railView);
+  }, [railView]);
 
   useEffect(() => {
     localStorage.setItem("termix_rightSidebarWidth", String(rightSidebarWidth));
@@ -1541,6 +1566,7 @@ export function AppShell({
   const orderSyncTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(
     null,
   );
+  const orderFlushRef = useRef<(() => void) | null>(null);
   const prevTabOrderRef = useRef<string>("");
   useEffect(() => {
     if (!tabsReady) return;
@@ -1551,11 +1577,15 @@ export function AppShell({
     if (orderKey === prevTabOrderRef.current) return;
     prevTabOrderRef.current = orderKey;
 
-    if (orderSyncTimeoutRef.current) clearTimeout(orderSyncTimeoutRef.current);
-    orderSyncTimeoutRef.current = setTimeout(() => {
+    orderFlushRef.current = () => {
       persistable.forEach((t, i) => {
         patchOpenTab(t.instanceId, { tabOrder: i }).catch(() => {});
       });
+    };
+    if (orderSyncTimeoutRef.current) clearTimeout(orderSyncTimeoutRef.current);
+    orderSyncTimeoutRef.current = setTimeout(() => {
+      orderSyncTimeoutRef.current = null;
+      orderFlushRef.current?.();
     }, 500);
 
     return () => {
@@ -1571,12 +1601,17 @@ export function AppShell({
   const lastSessionSaveTimeoutRef = useRef<ReturnType<
     typeof setTimeout
   > | null>(null);
+  const lastSessionFlushRef = useRef<(() => void) | null>(null);
   useEffect(() => {
     if (!tabsReady) return;
+    lastSessionFlushRef.current = () => {
+      saveLastSessionWorkspace(buildWorkspacePayload()).catch(() => {});
+    };
     if (lastSessionSaveTimeoutRef.current)
       clearTimeout(lastSessionSaveTimeoutRef.current);
     lastSessionSaveTimeoutRef.current = setTimeout(() => {
-      saveLastSessionWorkspace(buildWorkspacePayload()).catch(() => {});
+      lastSessionSaveTimeoutRef.current = null;
+      lastSessionFlushRef.current?.();
     }, 2000);
 
     return () => {
@@ -1596,6 +1631,34 @@ export function AppShell({
     rightRailView,
     rightSidebarWidth,
   ]);
+
+  // Closing or hiding the page must not lose the pending debounced saves:
+  // flush them synchronously when the document starts going away. Terminal
+  // sessions survive a reload through the open-tabs DB and the server-side
+  // PTYs, so no leave-confirmation dialog is needed.
+  useEffect(() => {
+    const flushPendingSaves = () => {
+      if (orderSyncTimeoutRef.current) {
+        clearTimeout(orderSyncTimeoutRef.current);
+        orderSyncTimeoutRef.current = null;
+        orderFlushRef.current?.();
+      }
+      if (lastSessionSaveTimeoutRef.current) {
+        clearTimeout(lastSessionSaveTimeoutRef.current);
+        lastSessionSaveTimeoutRef.current = null;
+        lastSessionFlushRef.current?.();
+      }
+    };
+    const onVisibilityChange = () => {
+      if (document.visibilityState === "hidden") flushPendingSaves();
+    };
+    window.addEventListener("pagehide", flushPendingSaves);
+    document.addEventListener("visibilitychange", onVisibilityChange);
+    return () => {
+      window.removeEventListener("pagehide", flushPendingSaves);
+      document.removeEventListener("visibilitychange", onVisibilityChange);
+    };
+  }, []);
 
   // ─── Tab management ──────────────────────────────────────────────────────
 
@@ -2039,25 +2102,6 @@ export function AppShell({
     return tab.terminalRef?.current?.isConnected?.() === true;
   }, []);
 
-  const hasActiveConnection = useCallback(() => {
-    return tabsRef.current.some(isActiveConnectionTab);
-  }, [isActiveConnectionTab]);
-
-  useEffect(() => {
-    const handleBeforeUnload = (event: BeforeUnloadEvent) => {
-      if (!hasActiveConnection()) return;
-
-      event.preventDefault();
-      event.returnValue = "";
-      return "";
-    };
-
-    window.addEventListener("beforeunload", handleBeforeUnload);
-    return () => {
-      window.removeEventListener("beforeunload", handleBeforeUnload);
-    };
-  }, [hasActiveConnection]);
-
   function doCloseTab(id: string) {
     const tabToClose = tabs.find((t) => t.id === id);
     if (tabToClose?.terminalRef?.current?.disconnect) {
@@ -2204,6 +2248,62 @@ export function AppShell({
     if (tab?.instanceId && tab.type !== "split-screen") {
       patchOpenTab(tab.instanceId, { label: newLabel }).catch(() => {});
     }
+  }
+
+  // Attach (or focus) the terminal tab for a persistent tmux session and
+  // return its id, so both plain attach and attach-in-split share one path.
+  function openPersistentSessionTab(
+    session: PersistentSession,
+    host: Host,
+  ): string {
+    const existing = tabsRef.current.find(
+      (tab) =>
+        tab.type === "terminal" && tab.persistentSessionId === session.id,
+    );
+    if (existing) {
+      setActiveTabId(existing.id);
+      return existing.id;
+    }
+    return openTab(host, "terminal", {
+      instanceId:
+        typeof crypto.randomUUID === "function"
+          ? crypto.randomUUID()
+          : `${Date.now()}`,
+      restoredSessionId: null,
+      savedLabel: session.displayName,
+      persistentSessionId: session.id,
+      persistentClientId:
+        typeof crypto.randomUUID === "function"
+          ? crypto.randomUUID()
+          : `${Date.now()}-client`,
+      persistentRole: "writer",
+      persistentTakeover: false,
+    });
+  }
+
+  // Attach the session into the split-screen layout: reuse the tab that
+  // already holds it, then either join the active split or start a 2-pane one.
+  function attachPersistentSessionInSplit(
+    session: PersistentSession,
+    host: Host,
+  ) {
+    const existing = tabsRef.current.find(
+      (tab) =>
+        tab.type === "terminal" && tab.persistentSessionId === session.id,
+    );
+    if (existing?.parentSplitTabId) {
+      setActiveTabId(existing.parentSplitTabId);
+      if (isMobile) setSidebarOpen(false);
+      return;
+    }
+    const tabId = openPersistentSessionTab(session, host);
+    if (splitMode !== "none") {
+      addTabToSplit(tabId);
+      setActiveTabId(tabId);
+    } else {
+      splitTabQuick(tabId, "2-way");
+    }
+    if (isMobile) setSidebarOpen(false);
   }
 
   function splitTabQuick(tabId: string, mode: SplitMode) {
@@ -2504,33 +2604,14 @@ export function AppShell({
                 .forEach((tab) => doCloseTab(tab.id));
             }}
             onAttach={(session, host) => {
-              const existing = tabsRef.current.find(
-                (tab) =>
-                  tab.type === "terminal" &&
-                  tab.persistentSessionId === session.id,
-              );
-              if (existing) {
-                setActiveTabId(existing.id);
-                if (isMobile) setSidebarOpen(false);
-                return;
-              }
-              openTab(host, "terminal", {
-                instanceId:
-                  typeof crypto.randomUUID === "function"
-                    ? crypto.randomUUID()
-                    : `${Date.now()}`,
-                restoredSessionId: null,
-                savedLabel: session.displayName,
-                persistentSessionId: session.id,
-                persistentClientId:
-                  typeof crypto.randomUUID === "function"
-                    ? crypto.randomUUID()
-                    : `${Date.now()}-client`,
-                persistentRole: "writer",
-                persistentTakeover: false,
-              });
+              openPersistentSessionTab(session, host);
               if (isMobile) setSidebarOpen(false);
             }}
+            onAttachSplit={
+              __TERMIX_FEATURE_SPLIT_TERMINAL__
+                ? attachPersistentSessionInSplit
+                : undefined
+            }
           />
         )}
         {owned && (

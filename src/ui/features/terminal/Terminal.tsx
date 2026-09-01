@@ -427,6 +427,9 @@ const TerminalInner = forwardRef<TerminalHandle, SSHTerminalProps>(
     const searchAddonRef = useRef<SearchAddon | null>(null);
     const searchInputRef = useRef<HTMLInputElement | null>(null);
     const [showSearch, setShowSearch] = useState(false);
+    // Whether xterm currently holds a text selection — drives the toolbar
+    // copy button's enabled state.
+    const [hasSelection, setHasSelection] = useState(false);
     const [searchQuery, setSearchQuery] = useState("");
     const [searchCaseSensitive, setSearchCaseSensitive] = useState(false);
     const [searchWholeWord, setSearchWholeWord] = useState(false);
@@ -2312,6 +2315,20 @@ const TerminalInner = forwardRef<TerminalHandle, SSHTerminalProps>(
       return ok;
     }
 
+    /** Toolbar copy: selection -> clipboard, keeping the selection if it fails. */
+    const copySelectionToClipboard = useCallback(async () => {
+      if (!terminal) return;
+      const selection = terminal.getSelection();
+      if (!selection) {
+        toast.info(t("terminal.noSelectionToCopy"));
+        return;
+      }
+      const ok = await writeTextToClipboard(selection);
+      if (!ok) return;
+      terminal.clearSelection();
+      toast.success(t("terminal.copiedToClipboard"));
+    }, [terminal, t]);
+
     async function readTextFromClipboard(): Promise<string> {
       const text = await readFromClipboard();
       if (!text && window.location.protocol !== "https:" && !isElectron()) {
@@ -2657,7 +2674,10 @@ const TerminalInner = forwardRef<TerminalHandle, SSHTerminalProps>(
           e.stopPropagation();
           if (terminal.hasSelection()) {
             const text = terminal.getSelection();
-            writeTextToClipboard(text).then(() => terminal.clearSelection());
+            // Keep the selection when the copy fails so it can be retried.
+            writeTextToClipboard(text).then((ok) => {
+              if (ok) terminal.clearSelection();
+            });
           } else {
             readTextFromClipboard().then((text) => {
               if (text) terminal.paste(text);
@@ -2667,6 +2687,10 @@ const TerminalInner = forwardRef<TerminalHandle, SSHTerminalProps>(
         }
       };
       element?.addEventListener("contextmenu", handleContextMenu);
+
+      const selectionDisposable = terminal.onSelectionChange(() => {
+        setHasSelection(terminal.hasSelection());
+      });
 
       const handlePaste = (e: ClipboardEvent) => {
         const text = e.clipboardData?.getData("text");
@@ -2750,6 +2774,8 @@ const TerminalInner = forwardRef<TerminalHandle, SSHTerminalProps>(
       return () => {
         touchWheelDisposed = true;
         isFittingRef.current = false;
+        selectionDisposable.dispose();
+        setHasSelection(false);
         resizeObserver.disconnect();
         clipboardProvider.dispose();
         element?.removeEventListener("contextmenu", handleContextMenu);
@@ -2906,6 +2932,21 @@ const TerminalInner = forwardRef<TerminalHandle, SSHTerminalProps>(
           }
         }
 
+        // Shift+Enter inserts a literal newline instead of submitting the
+        // line: paste goes through bracketed paste when the shell supports
+        // it, so bash/zsh show a continuation prompt instead of executing.
+        if (
+          e.key === "Enter" &&
+          e.shiftKey &&
+          !e.ctrlKey &&
+          !e.altKey &&
+          !e.metaKey
+        ) {
+          e.preventDefault();
+          terminal.paste("\n");
+          return false;
+        }
+
         if (
           showSearchRef.current &&
           e.key === "Escape" &&
@@ -3001,8 +3042,10 @@ const TerminalInner = forwardRef<TerminalHandle, SSHTerminalProps>(
           if (selection) {
             e.preventDefault();
             e.stopPropagation();
-            writeTextToClipboard(selection);
-            terminal.clearSelection();
+            // Keep the selection when the copy fails so it can be retried.
+            void writeTextToClipboard(selection).then((ok) => {
+              if (ok) terminal.clearSelection();
+            });
             return false;
           }
         }
@@ -3039,8 +3082,10 @@ const TerminalInner = forwardRef<TerminalHandle, SSHTerminalProps>(
           if (selection) {
             e.preventDefault();
             e.stopPropagation();
-            writeTextToClipboard(selection);
-            terminal.clearSelection();
+            // Keep the selection when the copy fails so it can be retried.
+            void writeTextToClipboard(selection).then((ok) => {
+              if (ok) terminal.clearSelection();
+            });
             return false;
           }
         }
@@ -3569,6 +3614,8 @@ const TerminalInner = forwardRef<TerminalHandle, SSHTerminalProps>(
             onUploadImage={(file) => void handleImageUpload(file, "file")}
             onPasteImage={() => void handleClipboardImage()}
             onOpenTab={onOpenTab}
+            onCopySelection={copySelectionToClipboard}
+            hasSelection={hasSelection}
             onOpenFiles={() => {
               if (webSocketRef.current?.readyState === WebSocket.OPEN) {
                 webSocketRef.current.send(JSON.stringify({ type: "get_cwd" }));

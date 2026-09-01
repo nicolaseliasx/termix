@@ -9,6 +9,7 @@ import { useTranslation } from "react-i18next";
 import {
   ChevronDown,
   ClipboardPaste,
+  Copy,
   GripVertical,
   ImagePlus,
   LayoutGrid,
@@ -118,6 +119,10 @@ interface TerminalToolbarProps {
   onPasteImage: () => void | Promise<void>;
   onOpenTab?: (type: TabType) => void;
   onOpenFiles?: () => void;
+  /** Copies the terminal's current selection, if any. */
+  onCopySelection?: () => void;
+  /** Whether the terminal currently holds a text selection. */
+  hasSelection?: boolean;
   isFocused: boolean;
 }
 
@@ -132,6 +137,8 @@ export const TerminalToolbar: React.FC<TerminalToolbarProps> = ({
   onPasteImage,
   onOpenTab,
   onOpenFiles,
+  onCopySelection,
+  hasSelection,
   isFocused,
 }) => {
   const { t } = useTranslation();
@@ -732,6 +739,10 @@ export const TerminalToolbar: React.FC<TerminalToolbarProps> = ({
             </span>
           )}
           <span className={CONTROL}>
+            <Copy className="size-4" />
+            {density !== "icon" && t("terminalToolbar.copy")}
+          </span>
+          <span className={CONTROL}>
             <ImagePlus className="size-4" />
             {density !== "icon" && t("terminalToolbar.upload")}
           </span>
@@ -812,6 +823,19 @@ export const TerminalToolbar: React.FC<TerminalToolbarProps> = ({
                 )}
                 {(hostActions.length > 0 || isTmuxAttached) && (
                   <div className={SEPARATOR} />
+                )}
+                {onCopySelection && (
+                  <button
+                    type="button"
+                    className={CONTROL}
+                    aria-label={t("terminalToolbar.copy")}
+                    title={t("terminalToolbar.copy")}
+                    disabled={!hasSelection}
+                    onClick={onCopySelection}
+                  >
+                    <Copy className="size-4 shrink-0" />
+                    {effectiveDensity !== "icon" && t("terminalToolbar.copy")}
+                  </button>
                 )}
                 <div
                   role="group"

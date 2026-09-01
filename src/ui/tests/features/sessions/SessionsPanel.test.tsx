@@ -107,10 +107,43 @@ describe("SessionsPanel host availability", () => {
     render(<SessionsPanel onAttach={vi.fn()} />);
 
     expect(
-      await screen.findByRole("option", { name: "Devhub" }),
+      await screen.findByRole("option", { name: "Devhub (default)" }),
     ).toBeInTheDocument();
     expect(screen.queryByRole("option", { name: /Old/i })).toBeNull();
     expect(screen.queryByText(/checking|offline/i)).toBeNull();
+  });
+
+  it("pre-selects the devhub default host once it is online", async () => {
+    useStatuses([[1, "online"]]);
+
+    render(<SessionsPanel onAttach={vi.fn()} />);
+
+    const select = await screen.findByLabelText("Host");
+    await waitFor(() => expect(select).toHaveValue("1"));
+  });
+
+  it("does not pre-select anything when the default host is offline", async () => {
+    useStatuses([[1, "offline"]]);
+
+    render(<SessionsPanel onAttach={vi.fn()} />);
+
+    const select = await screen.findByLabelText("Host");
+    expect(select).toHaveValue("");
+  });
+
+  it("labels only the devhub host as default", async () => {
+    mocks.getSSHHosts.mockResolvedValue([host(1, "Devhub"), host(4, "Other")]);
+    useStatuses([
+      [1, "online"],
+      [4, "online"],
+    ]);
+
+    render(<SessionsPanel onAttach={vi.fn()} />);
+
+    expect(
+      await screen.findByRole("option", { name: "Devhub (default)" }),
+    ).toBeInTheDocument();
+    expect(screen.getByRole("option", { name: "Other" })).toBeInTheDocument();
   });
 
   it("clears a selected host when it is no longer online", async () => {
@@ -145,7 +178,7 @@ describe("SessionsPanel host availability", () => {
     await waitFor(() =>
       expect(onAttach).toHaveBeenCalledWith(
         created,
-        expect.objectContaining({ id: 1, name: "Devhub" }),
+        expect.objectContaining({ id: "1", name: "Devhub" }),
       ),
     );
   });
@@ -174,5 +207,42 @@ describe("SessionsPanel host availability", () => {
     await user.click(screen.getByRole("button", { name: "Terminate" }));
 
     await waitFor(() => expect(onTerminate).toHaveBeenCalledWith(session));
+  });
+
+  it("attaches in split view when the split button is clicked", async () => {
+    const user = userEvent.setup();
+    const onAttach = vi.fn();
+    const onAttachSplit = vi.fn();
+    const session = persistentSession();
+    mocks.listPersistentSessions.mockResolvedValue({
+      data: [session],
+      total: 1,
+    });
+    useStatuses([[1, "online"]]);
+
+    render(<SessionsPanel onAttach={onAttach} onAttachSplit={onAttachSplit} />);
+
+    await user.click(await screen.findByRole("button", { name: /split/i }));
+
+    await waitFor(() =>
+      expect(onAttachSplit).toHaveBeenCalledWith(
+        session,
+        expect.objectContaining({ id: "1", name: "Devhub" }),
+      ),
+    );
+    expect(onAttach).not.toHaveBeenCalled();
+  });
+
+  it("hides the split button when the shell does not support split view", async () => {
+    mocks.listPersistentSessions.mockResolvedValue({
+      data: [persistentSession()],
+      total: 1,
+    });
+    useStatuses([[1, "online"]]);
+
+    render(<SessionsPanel onAttach={vi.fn()} />);
+
+    await screen.findByRole("button", { name: /attach/i });
+    expect(screen.queryByRole("button", { name: /split/i })).toBeNull();
   });
 });

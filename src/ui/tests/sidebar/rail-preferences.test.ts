@@ -34,11 +34,17 @@ describe("rail-preferences", () => {
       expect(readRailPreference("expandAppRailOnHover")).toBe(true);
     });
 
+    it("defaults appRailItemsExpanded to false when unset", () => {
+      expect(readRailPreference("appRailItemsExpanded")).toBe(false);
+    });
+
     it("reads stored values back for both keys", () => {
       localStorage.setItem("pinAppRail", "true");
       localStorage.setItem("expandAppRailOnHover", "false");
+      localStorage.setItem("appRailItemsExpanded", "true");
       expect(readRailPreference("pinAppRail")).toBe(true);
       expect(readRailPreference("expandAppRailOnHover")).toBe(false);
+      expect(readRailPreference("appRailItemsExpanded")).toBe(true);
     });
   });
 
@@ -54,18 +60,25 @@ describe("rail-preferences", () => {
     it("dispatches the matching change event so other surfaces resync", () => {
       const pinListener = vi.fn();
       const hoverListener = vi.fn();
+      const itemsListener = vi.fn();
       window.addEventListener("pinAppRailChanged", pinListener);
       window.addEventListener("expandAppRailOnHoverChanged", hoverListener);
+      window.addEventListener("appRailItemsExpandedChanged", itemsListener);
 
       setRailPreference("pinAppRail", true);
       expect(pinListener).toHaveBeenCalledTimes(1);
       expect(hoverListener).not.toHaveBeenCalled();
+      expect(itemsListener).not.toHaveBeenCalled();
 
       setRailPreference("expandAppRailOnHover", false);
       expect(hoverListener).toHaveBeenCalledTimes(1);
 
+      setRailPreference("appRailItemsExpanded", true);
+      expect(itemsListener).toHaveBeenCalledTimes(1);
+
       window.removeEventListener("pinAppRailChanged", pinListener);
       window.removeEventListener("expandAppRailOnHoverChanged", hoverListener);
+      window.removeEventListener("appRailItemsExpandedChanged", itemsListener);
     });
 
     it("round-trips through read after a write", () => {

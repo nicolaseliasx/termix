@@ -271,3 +271,22 @@ wake_on_lan, advanced_audit`. Flags are injected by Vite `define` as
   `sha256:5591d09ae9b8981bd2c16c66a280a9755c820b8308995e5ac96e46868c5ed19e`.
   Docker health, backend health, HTTP, HTTPS, Sessions asset discovery, and
   the `/api/v1/persistent-sessions` authentication boundary all passed.
+
+### 2026-09-01 — Sessions split and terminal UX deploy
+
+- Added Sessions split attach, Shift+Enter multiline terminal input, reliable
+  selection copying, a compact expandable application rail, eager shell state
+  persistence without a browser leave prompt, and `devhub (default)` host
+  preselection.
+- Node 24 type-check, ESLint, diff checks, and the production Docker build
+  passed. The focused UI run passed 78 tests; one pre-existing Radix
+  AlertDialog/JSDOM accessibility test remained failing and was reproduced on
+  the baseline implementation.
+- Recovery point: `/home/admin/termix/backups/tserver-data-20260901-140719.tar.gz`
+  (SHA-256 `f24f36f56867122a44112b3817d69b7cbdc7c46dd5d86157c71e008fbdfa5365`);
+  rollback image: `tserver:rollback-20260901-140719`.
+- Candidate `sha256:fdf8356fbe81e240a6d75d0873d29dbc2da3ba04398b8f822b17c2565ce1a019`
+  passed isolated smoke tests and now runs healthy in production with the
+  original `tserver-data` volume. Local HTTPS, backend health, Sessions/Split
+  assets and the unauthenticated `401` boundary passed; public DNS resolution
+  was unavailable from the deployment host during validation.

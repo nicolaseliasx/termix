@@ -137,3 +137,30 @@ Relevant diff (see commit `chore(fork): local theme, SSL SAN for IP domain and c
   `{"status":"ok"}`; HTTPS serves `/favicon.svg` with `200`; HTTP (`8080`)
   redirects with `301`; unauthenticated `/api/v1/persistent-sessions` returns
   `401`.
+
+## Sessions split, terminal input, and compact rail deploy (2026-09-01)
+
+- Backup: `/home/admin/termix/backups/tserver-data-20260901-140719.tar.gz`
+  (`sha256:f24f36f56867122a44112b3817d69b7cbdc7c46dd5d86157c71e008fbdfa5365`,
+  12,649,170 bytes, mode `0640`), created from the read-only `tserver-data`
+  volume and verified with `tar -tzf`.
+- Deployed image: `tserver:candidate-20260901-140719`
+  (`sha256:fdf8356fbe81e240a6d75d0873d29dbc2da3ba04398b8f822b17c2565ce1a019`),
+  built with `TERMIX_BUILD_PROFILE=custom` and
+  `FEATURE_SPLIT_TERMINAL=true`.
+- Rollback image: `tserver:rollback-20260901-140719` (the image running
+  immediately before this deploy). Roll back without changing persistent data:
+
+  ```sh
+  docker tag tserver:rollback-20260901-140719 tserver:latest
+  docker compose -f docker/docker-compose.local.yml up -d --no-build tserver
+  ```
+
+- An isolated candidate with a temporary volume passed Docker health, backend
+  health, UI `200`, Sessions and SplitScreen assets, the enabled split feature,
+  and unauthenticated persistent-sessions `401` before promotion.
+- Production passed Docker health, backend health (`30001` → `{"status":"ok"}`),
+  loopback HTTPS (`8443` → `200`), persistent-sessions auth (`401`), Sessions
+  and SplitScreen asset discovery, preserved the `tserver-data` mount, and had
+  no startup error/fatal entries. Public validation was not available from the
+  host because `tserver.ncls.cc` did not resolve at deploy time.

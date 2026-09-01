@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import type { FormEvent } from "react";
 import {
   AlertCircle,
+  Columns2,
   Loader2,
   Plus,
   TerminalSquare,
@@ -42,6 +43,14 @@ function formatHostStatus(status: HostAvailability): string {
 const formFieldClass =
   "h-8 w-full rounded-none border border-input bg-transparent px-2 text-xs outline-none transition-colors focus-visible:border-ring focus-visible:ring-1 focus-visible:ring-ring/50";
 
+// Host that is pre-selected whenever it is online, labeled "(default)" in
+// the host picker.
+const DEFAULT_HOST_NAME = "devhub";
+
+function isDefaultHost(host: Host): boolean {
+  return host.name.trim().toLowerCase() === DEFAULT_HOST_NAME;
+}
+
 function formatRuntime(createdAt: string): string {
   const seconds = Math.max(
     0,
@@ -63,10 +72,13 @@ function errorText(error: unknown): string {
 }
 export function SessionsPanel({
   onAttach,
+  onAttachSplit,
   onTerminate,
   onRegisterRefresh,
 }: {
   onAttach: (session: PersistentSession, host: Host) => void;
+  /** Attach the session inside a side-by-side split view. */
+  onAttachSplit?: (session: PersistentSession, host: Host) => void;
   onTerminate?: (session: PersistentSession) => void;
   /** Lets the shell header trigger the same refresh the panel polls with. */
   onRegisterRefresh?: (refresh: () => Promise<void>) => void;
@@ -118,6 +130,13 @@ export function SessionsPanel({
       setHostId("");
     }
   }, [getHostAvailability, hostId]);
+  // Keep the default host pre-selected whenever it is available, so the
+  // create form is always ready to submit for it.
+  useEffect(() => {
+    if (hostId) return;
+    const defaultHost = onlineHosts.find(isDefaultHost);
+    if (defaultHost) setHostId(String(defaultHost.id));
+  }, [hostId, onlineHosts]);
   const refresh = useCallback(
     async (signal?: AbortSignal) => {
       try {
@@ -246,6 +265,7 @@ export function SessionsPanel({
               {onlineHosts.map((host) => (
                 <option value={host.id} key={host.id}>
                   {host.name}
+                  {isDefaultHost(host) ? " (default)" : ""}
                 </option>
               ))}
             </select>
@@ -358,6 +378,18 @@ export function SessionsPanel({
                           <TerminalSquare className="mr-1 size-4" />
                           Attach
                         </Button>
+                        {onAttachSplit && (
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            title="Attach in split view"
+                            disabled={ended || status !== "online" || !host}
+                            onClick={() => host && onAttachSplit(session, host)}
+                          >
+                            <Columns2 className="mr-1 size-4" />
+                            Split
+                          </Button>
+                        )}
                         {status !== "online" && (
                           <span className="flex items-center gap-1 self-center text-xs text-muted-foreground">
                             <WifiOff className="size-3" />

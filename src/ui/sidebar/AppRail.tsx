@@ -3,6 +3,7 @@ import { useTranslation } from "react-i18next";
 import {
   Bell,
   Check,
+  ChevronDown,
   LogOut,
   PanelRight,
   Settings,
@@ -53,6 +54,24 @@ type RailItem =
   | { kind: "tab"; tabType: TabType; icon: React.ReactNode; title: string }
   | { kind: "separator" };
 
+// Destinations that stay visible while the collapsible group is collapsed.
+const PRIMARY_RAIL_VIEWS = new Set(["sessions", "hosts"]);
+
+function collapseSeparators(items: RailItem[]): RailItem[] {
+  const result: RailItem[] = [];
+  for (const item of items) {
+    if (item.kind === "separator") {
+      if (result.length === 0 || result[result.length - 1].kind === "separator")
+        continue;
+      result.push(item);
+    } else {
+      result.push(item);
+    }
+  }
+  if (result[result.length - 1]?.kind === "separator") result.pop();
+  return result;
+}
+
 function buildRailButtons(
   splitMode: SplitMode,
   t: (key: string) => string,
@@ -88,18 +107,7 @@ function buildRailButtons(
     return !hidden.has(item.view);
   });
 
-  const result: RailItem[] = [];
-  for (const item of filtered) {
-    if (item.kind === "separator") {
-      if (result.length === 0 || result[result.length - 1].kind === "separator")
-        continue;
-      result.push(item);
-    } else {
-      result.push(item);
-    }
-  }
-  if (result[result.length - 1]?.kind === "separator") result.pop();
-  return result;
+  return collapseSeparators(filtered);
 }
 
 const btnBase =
@@ -132,6 +140,12 @@ export function AppRail({
   const [pinned, setPinned] = useState(() => readRailPreference("pinAppRail"));
   const [expandOnHover, setExpandOnHover] = useState(() =>
     readRailPreference("expandAppRailOnHover"),
+  );
+  // Whether the collapsible rail group below hosts/sessions is expanded.
+  // Collapsed by default: only sessions and hosts stay visible until the
+  // chevron expands the remaining destinations.
+  const [itemsExpanded, setItemsExpanded] = useState(() =>
+    readRailPreference("appRailItemsExpanded"),
   );
   const [menuPos, setMenuPos] = useState<{ x: number; y: number } | null>(null);
   // Which promotable item was right-clicked, so the menu can offer to open it
@@ -198,11 +212,15 @@ export function AppRail({
     const pinHandler = () => setPinned(readRailPreference("pinAppRail"));
     const hoverHandler = () =>
       setExpandOnHover(readRailPreference("expandAppRailOnHover"));
+    const itemsHandler = () =>
+      setItemsExpanded(readRailPreference("appRailItemsExpanded"));
     window.addEventListener("pinAppRailChanged", pinHandler);
     window.addEventListener("expandAppRailOnHoverChanged", hoverHandler);
+    window.addEventListener("appRailItemsExpandedChanged", itemsHandler);
     return () => {
       window.removeEventListener("pinAppRailChanged", pinHandler);
       window.removeEventListener("expandAppRailOnHoverChanged", hoverHandler);
+      window.removeEventListener("appRailItemsExpandedChanged", itemsHandler);
     };
   }, []);
 
@@ -280,7 +298,21 @@ export function AppRail({
     // the user has said yes, so someone who declined never sees the entry.
     ...(aiEnabled ? [] : ["ai"]),
   ]);
-  const railButtons = buildRailButtons(splitMode, t, effectiveHiddenTabs);
+  const allRailButtons = buildRailButtons(splitMode, t, effectiveHiddenTabs);
+  const primaryRailButtons = allRailButtons.filter(
+    (item) =>
+      item.kind !== "separator" &&
+      !("tabType" in item) &&
+      PRIMARY_RAIL_VIEWS.has(item.view),
+  );
+  const secondaryRailButtons = collapseSeparators(
+    allRailButtons.filter((item) => !primaryRailButtons.includes(item)),
+  );
+
+  const toggleItemsExpanded = () => {
+    setRailPreference("appRailItemsExpanded", !itemsExpanded);
+    setMenuPos(null);
+  };
 
   const togglePinned = () => {
     setRailPreference("pinAppRail", !pinned);
@@ -313,10 +345,10 @@ export function AppRail({
       }}
     >
       <div className="flex flex-col flex-1 gap-1 overflow-y-auto scrollbar-none min-h-0">
-        {railButtons.map((item, i) =>
+        {primaryRailButtons.map((item) =>
           item.kind === "separator" ? (
             <div
-              key={`sep-${i}`}
+              key="sep-primary"
               className="mx-auto h-px bg-border my-0.5 shrink-0 transition-[width] duration-200"
               style={{ width: railExpanded ? "calc(100% - 16px)" : 20 }}
             />
@@ -399,85 +431,202 @@ export function AppRail({
             </button>
           ),
         )}
+        {secondaryRailButtons.length > 0 && (
+          <button
+            onClick={toggleItemsExpanded}
+            aria-expanded={itemsExpanded}
+            title={
+              itemsExpanded ? t("nav.showFewerItems") : t("nav.showAllItems")
+            }
+            style={btnStyle}
+            className={`${btnBase} text-muted-foreground hover:text-foreground hover:bg-muted/60`}
+          >
+            <span
+              className="shrink-0 flex items-center justify-center"
+              style={{ width: 16, height: 16 }}
+            >
+              <ChevronDown
+                className={`size-4 transition-transform duration-150 ${
+                  itemsExpanded ? "rotate-180" : ""
+                }`}
+              />
+            </span>
+            <span
+              className={`text-xs font-medium whitespace-nowrap overflow-hidden transition-[opacity,width] duration-150 ${
+                railExpanded ? "opacity-100 delay-75" : "opacity-0 w-0"
+              }`}
+            >
+              {itemsExpanded ? t("nav.showFewerItems") : t("nav.showAllItems")}
+            </span>
+          </button>
+        )}
+        {itemsExpanded &&
+          secondaryRailButtons.map((item, i) =>
+            item.kind === "separator" ? (
+              <div
+                key={`sep-${i}`}
+                className="mx-auto h-px bg-border my-0.5 shrink-0 transition-[width] duration-200"
+                style={{ width: railExpanded ? "calc(100% - 16px)" : 20 }}
+              />
+            ) : "tabType" in item ? (
+              <button
+                key={item.tabType}
+                onClick={() => onOpenTab?.(item.tabType)}
+                style={btnStyle}
+                className={`${btnBase} text-muted-foreground hover:text-foreground hover:bg-muted/60`}
+              >
+                <span
+                  className="shrink-0 flex items-center justify-center"
+                  style={{ width: 16, height: 16 }}
+                >
+                  {item.icon}
+                </span>
+                <span
+                  className={`text-xs font-medium whitespace-nowrap overflow-hidden transition-[opacity,width] duration-150 ${
+                    railExpanded ? "opacity-100 delay-75" : "opacity-0 w-0"
+                  }`}
+                >
+                  {item.title}
+                </span>
+              </button>
+            ) : (
+              <button
+                key={item.view}
+                onClick={(e) => {
+                  if (item.promotable && (e.ctrlKey || e.metaKey)) {
+                    onOpenTab?.(item.view as TabType);
+                    return;
+                  }
+                  onRailClick(item.view);
+                }}
+                onAuxClick={(e) => {
+                  if (e.button !== 1 || !item.promotable) return;
+                  e.preventDefault();
+                  onOpenTab?.(item.view as TabType);
+                }}
+                onContextMenu={() => {
+                  if (item.promotable || item.rightDockable)
+                    setMenuTarget({
+                      view: item.view,
+                      title: item.title,
+                      promotable: item.promotable,
+                      rightDockable: item.rightDockable,
+                    });
+                }}
+                data-rail-promotable={
+                  item.promotable || item.rightDockable ? "" : undefined
+                }
+                title={
+                  item.promotable
+                    ? `${item.title}\n${t("nav.openAsTabHint")}`
+                    : item.title
+                }
+                style={btnStyle}
+                className={`${btnBase} ${
+                  sidebarOpen && railView === item.view
+                    ? "text-accent-brand bg-accent-brand/10"
+                    : "text-muted-foreground hover:text-foreground hover:bg-muted/60"
+                }`}
+              >
+                <span
+                  className="shrink-0 flex items-center justify-center"
+                  style={{ width: 16, height: 16 }}
+                >
+                  {item.icon}
+                </span>
+                <span
+                  className={`text-xs font-medium whitespace-nowrap overflow-hidden transition-[opacity,width] duration-150 ${
+                    railExpanded ? "opacity-100 delay-75" : "opacity-0 w-0"
+                  }`}
+                >
+                  {item.title}
+                </span>
+                {item.dot && (
+                  <span className="absolute top-0.5 right-0.5 size-1.5 rounded-full bg-accent-brand" />
+                )}
+              </button>
+            ),
+          )}
       </div>
 
       <div className="shrink-0 flex flex-col gap-1 border-t border-border pt-1 pb-1">
-        {[
-          {
-            view: "alerts" as RailView,
-            icon: <Bell size={16} />,
-            title: t("nav.alerts"),
-            promotable: true,
-          },
-          {
-            view: "user-profile" as RailView,
-            icon: <User size={16} />,
-            title: t("nav.userProfile"),
-          },
-          ...(isAdmin
-            ? [
-                {
-                  view: "admin-settings" as RailView,
-                  icon: <Settings size={16} />,
-                  title: t("nav.admin"),
-                },
-              ]
-            : []),
-        ].map((item) => (
-          <button
-            key={item.view}
-            onClick={(e) => {
-              if (item.promotable && (e.ctrlKey || e.metaKey)) {
+        {itemsExpanded &&
+          [
+            {
+              view: "alerts" as RailView,
+              icon: <Bell size={16} />,
+              title: t("nav.alerts"),
+              promotable: true,
+            },
+            {
+              view: "user-profile" as RailView,
+              icon: <User size={16} />,
+              title: t("nav.userProfile"),
+            },
+            ...(isAdmin
+              ? [
+                  {
+                    view: "admin-settings" as RailView,
+                    icon: <Settings size={16} />,
+                    title: t("nav.admin"),
+                  },
+                ]
+              : []),
+          ].map((item) => (
+            <button
+              key={item.view}
+              onClick={(e) => {
+                if (item.promotable && (e.ctrlKey || e.metaKey)) {
+                  onOpenTab?.(item.view as TabType);
+                  return;
+                }
+                onRailClick(item.view);
+              }}
+              onAuxClick={(e) => {
+                if (e.button !== 1 || !item.promotable) return;
+                e.preventDefault();
                 onOpenTab?.(item.view as TabType);
-                return;
+              }}
+              onContextMenu={() => {
+                if (item.promotable)
+                  setMenuTarget({
+                    view: item.view,
+                    title: item.title,
+                    promotable: item.promotable,
+                    rightDockable: true,
+                  });
+              }}
+              data-rail-promotable={item.promotable ? "" : undefined}
+              title={
+                item.promotable
+                  ? `${item.title}\n${t("nav.openAsTabHint")}`
+                  : item.title
               }
-              onRailClick(item.view);
-            }}
-            onAuxClick={(e) => {
-              if (e.button !== 1 || !item.promotable) return;
-              e.preventDefault();
-              onOpenTab?.(item.view as TabType);
-            }}
-            onContextMenu={() => {
-              if (item.promotable)
-                setMenuTarget({
-                  view: item.view,
-                  title: item.title,
-                  promotable: item.promotable,
-                  rightDockable: true,
-                });
-            }}
-            data-rail-promotable={item.promotable ? "" : undefined}
-            title={
-              item.promotable
-                ? `${item.title}\n${t("nav.openAsTabHint")}`
-                : item.title
-            }
-            style={btnStyle}
-            className={`${btnBase} ${
-              sidebarOpen && railView === item.view
-                ? "text-accent-brand bg-accent-brand/10"
-                : "text-muted-foreground hover:text-foreground hover:bg-muted/60"
-            }`}
-          >
-            <span
-              className="relative shrink-0 flex items-center justify-center"
-              style={{ width: 16, height: 16 }}
+              style={btnStyle}
+              className={`${btnBase} ${
+                sidebarOpen && railView === item.view
+                  ? "text-accent-brand bg-accent-brand/10"
+                  : "text-muted-foreground hover:text-foreground hover:bg-muted/60"
+              }`}
             >
-              {item.icon}
-              {item.view === "alerts" && unreadAlerts > 0 && (
-                <span className="absolute -top-1 -right-1 flex size-3 items-center justify-center rounded-full bg-destructive text-[8px] font-bold text-white leading-none">
-                  {unreadAlerts > 9 ? "9+" : unreadAlerts}
-                </span>
-              )}
-            </span>
-            <span
-              className={`text-xs font-medium whitespace-nowrap overflow-hidden transition-[opacity,width] duration-150 ${railExpanded ? "opacity-100 delay-75" : "opacity-0 w-0"}`}
-            >
-              {item.title}
-            </span>
-          </button>
-        ))}
+              <span
+                className="relative shrink-0 flex items-center justify-center"
+                style={{ width: 16, height: 16 }}
+              >
+                {item.icon}
+                {item.view === "alerts" && unreadAlerts > 0 && (
+                  <span className="absolute -top-1 -right-1 flex size-3 items-center justify-center rounded-full bg-destructive text-[8px] font-bold text-white leading-none">
+                    {unreadAlerts > 9 ? "9+" : unreadAlerts}
+                  </span>
+                )}
+              </span>
+              <span
+                className={`text-xs font-medium whitespace-nowrap overflow-hidden transition-[opacity,width] duration-150 ${railExpanded ? "opacity-100 delay-75" : "opacity-0 w-0"}`}
+              >
+                {item.title}
+              </span>
+            </button>
+          ))}
         <div className="mx-2 my-1 border-t border-border" />
         <button
           onClick={onLogout}
