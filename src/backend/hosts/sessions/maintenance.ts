@@ -6,8 +6,8 @@ import { resolveHostById } from "../host-resolver.js";
 import { SshPersistentSessionGateway } from "./gateway.js";
 import { PersistentSessionReconciler } from "./reconciler.js";
 
-export class PersistentSessionMaintenance {
-  private readonly reconciler = new PersistentSessionReconciler(
+export function getPersistentSessionReconciler(): PersistentSessionReconciler {
+  return (sharedReconciler ??= new PersistentSessionReconciler(
     createCurrentPersistentSessionRepository(),
     new SshPersistentSessionGateway(),
     async () => {
@@ -16,7 +16,13 @@ export class PersistentSessionMaintenance {
       return hosts.map((host) => ({ id: host.id, userId: host.userId }));
     },
     resolveHostById,
-  );
+  ));
+}
+
+let sharedReconciler: PersistentSessionReconciler | undefined;
+
+export class PersistentSessionMaintenance {
+  private readonly reconciler = getPersistentSessionReconciler();
   start(): void {
     this.reconciler.start();
   }

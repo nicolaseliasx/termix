@@ -21,7 +21,10 @@ import { PersistentSessionError } from "./errors.js";
 import { sshLogger } from "../../utils/logger.js";
 
 export interface PersistentSessionGateway {
-  list(host: SSHHost): Promise<RemotePersistentSession[]>;
+  list(
+    host: SSHHost,
+    options?: { timeoutMs?: number },
+  ): Promise<RemotePersistentSession[]>;
   create(
     host: SSHHost,
     input: {
@@ -49,13 +52,31 @@ export interface PersistentSessionGateway {
   kill(host: SSHHost, name: string, id: string): Promise<void>;
 }
 export class SshPersistentSessionGateway implements PersistentSessionGateway {
-  private async execute(host: SSHHost, command: string): Promise<string> {
+  private async execute(
+    host: SSHHost,
+    command: string,
+    timeoutMs = 30_000,
+  ): Promise<string> {
     try {
-      return await withConnection(
+      const operation = withConnection(
         getFleetPoolKey(host),
-        createFleetSshFactory(host),
+        createFleetSshFactory(host, { readyTimeoutMs: timeoutMs }),
         (client) => execCommand(client, withTmuxPath(command)),
       );
+      let timer: ReturnType<typeof setTimeout> | undefined;
+      try {
+        return await Promise.race([
+          operation,
+          new Promise<string>((_, reject) => {
+            timer = setTimeout(
+              () => reject(new Error("Persistent session SSH timeout")),
+              timeoutMs,
+            );
+          }),
+        ]);
+      } finally {
+        if (timer) clearTimeout(timer);
+      }
     } catch (error) {
       sshLogger.warn("Persistent session remote operation failed", {
         operation: "persistent_session_remote",
@@ -65,9 +86,16 @@ export class SshPersistentSessionGateway implements PersistentSessionGateway {
       throw new PersistentSessionError("PERSISTENT_SESSION_REMOTE_UNAVAILABLE");
     }
   }
-  async list(host: SSHHost): Promise<RemotePersistentSession[]> {
+  async list(
+    host: SSHHost,
+    options?: { timeoutMs?: number },
+  ): Promise<RemotePersistentSession[]> {
     return parsePersistentTmuxList(
-      await this.execute(host, buildPersistentTmuxListCommand()),
+      await this.execute(
+        host,
+        buildPersistentTmuxListCommand(),
+        options?.timeoutMs,
+      ),
     );
   }
   async create(

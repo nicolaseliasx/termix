@@ -131,6 +131,8 @@ const authManager = AuthManager.getInstance();
 const TAILSCALE_CHECK_TIMEOUT_MS = 1_800_000;
 
 const userConnections = new Map<string, Set<WebSocket>>();
+const WS_PING_INTERVAL_MS = 30_000;
+const WS_MAX_MISSED_PONGS = 3;
 
 const wss = new WebSocketServer({
   port: 30002,
@@ -218,22 +220,25 @@ async function handleShareTokenConnection(
 
   const currentSessionId: string = share.sessionId;
 
-  let wsAlive = true;
+  let missedPongs = 0;
   ws.on("pong", () => {
-    wsAlive = true;
+    missedPongs = 0;
+  });
+  ws.on("message", () => {
+    missedPongs = 0;
   });
   const wsPingInterval = setInterval(() => {
     if (ws.readyState === WebSocket.OPEN) {
-      if (!wsAlive) {
+      if (missedPongs >= WS_MAX_MISSED_PONGS) {
         ws.terminate();
         return;
       }
-      wsAlive = false;
+      missedPongs += 1;
       ws.ping();
     } else {
       clearInterval(wsPingInterval);
     }
-  }, 30000);
+  }, WS_PING_INTERVAL_MS);
 
   ws.on("close", () => {
     clearInterval(wsPingInterval);
@@ -386,12 +391,18 @@ wss.on("connection", async (ws: WebSocket, req) => {
   ws.send = ((data: unknown, cb?: (err?: Error) => void) => {
     if (typeof data === "string") {
       try {
-        const parsed = JSON.parse(data) as { type?: unknown };
+        const parsed = JSON.parse(data) as {
+          type?: unknown;
+          code?: unknown;
+          role?: unknown;
+        };
         if (typeof parsed.type === "string") {
           sshLogger.info(`WS-> client ${parsed.type}`, {
             operation: "terminal_ws_send",
             sessionId,
             userId,
+            code: typeof parsed.code === "string" ? parsed.code : undefined,
+            role: typeof parsed.role === "string" ? parsed.role : undefined,
           });
         }
       } catch {
@@ -420,37 +431,47 @@ wss.on("connection", async (ws: WebSocket, req) => {
   let warpgateAuthTimeout: NodeJS.Timeout | null = null;
   let isAwaitingAuthCredentials = false;
 
-  let wsAlive = true;
+  let missedPongs = 0;
 
   ws.on("pong", () => {
-    wsAlive = true;
+    missedPongs = 0;
+  });
+
+  // Any client message proves that the connection is usable. This avoids
+  // discarding an active terminal when a native pong is briefly delayed by a
+  // suspended browser tab, a busy event loop, or a short network stall.
+  ws.on("message", () => {
+    missedPongs = 0;
   });
 
   const wsPingInterval = setInterval(() => {
     if (ws.readyState === WebSocket.OPEN) {
-      if (!wsAlive) {
+      if (missedPongs >= WS_MAX_MISSED_PONGS) {
         sshLogger.warn(
           "WebSocket pong timeout - terminating zombie connection",
           {
             operation: "ws_pong_timeout",
             userId,
             sessionId: currentSessionId,
+            missedPongs,
           },
         );
         ws.terminate();
         return;
       }
-      wsAlive = false;
+      missedPongs += 1;
       ws.ping();
     }
-  }, 30000);
+  }, WS_PING_INTERVAL_MS);
 
-  ws.on("close", () => {
+  ws.on("close", (code, reason) => {
     clearInterval(wsPingInterval);
     sshLogger.info("Terminal WebSocket disconnected", {
       operation: "terminal_ws_disconnect",
       sessionId,
       userId,
+      code,
+      reason: reason.toString(),
     });
     const userWs = userConnections.get(userId);
     if (userWs) {
@@ -487,6 +508,7 @@ wss.on("connection", async (ws: WebSocket, req) => {
       persistentAttachmentManager.detach(
         persistentAttachment.persistentSessionId,
         persistentAttachment.clientId,
+        persistentAttachment.generation,
       );
       persistentAttachment = null;
     }
@@ -588,6 +610,13 @@ wss.on("connection", async (ws: WebSocket, req) => {
                     "PERSISTENT_SESSION_CONNECT_FAILED",
                     "Unable to attach persistent session",
                   );
+            sshLogger.warn("Persistent session attachment failed", {
+              operation: "persistent_session_attach_failed",
+              userId,
+              persistentSessionId: asString(attachData.persistentSessionId),
+              code: persistentError.code,
+              error: persistentError.message,
+            });
             ws.send(
               JSON.stringify({
                 type: "persistent_error",
@@ -604,6 +633,7 @@ wss.on("connection", async (ws: WebSocket, req) => {
             persistentAttachmentManager.detach(
               persistentAttachment.persistentSessionId,
               persistentAttachment.clientId,
+              persistentAttachment.generation,
             );
             ws.send(
               JSON.stringify({
@@ -836,6 +866,7 @@ wss.on("connection", async (ws: WebSocket, req) => {
             persistentAttachmentManager.detach(
               persistentAttachment.persistentSessionId,
               persistentAttachment.clientId,
+              persistentAttachment.generation,
             );
             ws.send(
               JSON.stringify({
@@ -1953,7 +1984,7 @@ wss.on("connection", async (ws: WebSocket, req) => {
             type: "error",
             message: isRetriableDnsError(error)
               ? "SSH error: DNS lookup temporarily failed. Check the Docker/container DNS configuration or try again."
-              : "SSH error: Could not resolve hostname from the Termix server container.",
+              : "SSH error: Could not resolve hostname from the Termix container.",
           }),
         );
         cleanupAuthState(connectionTimeout);

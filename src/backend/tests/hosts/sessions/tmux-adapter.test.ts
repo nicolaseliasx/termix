@@ -1,6 +1,8 @@
 import { describe, expect, it } from "vitest";
 import {
+  buildPersistentTmuxAttachCommand,
   buildPersistentTmuxCreateCommand,
+  buildPersistentTmuxHasSessionCommand,
   buildPersistentTmuxKillCommand,
   buildPersistentTmuxListCommand,
   parsePersistentTmuxList,
@@ -13,6 +15,14 @@ describe("persistent tmux adapter", () => {
     createdAt: "2026-08-26T00:00:00.000Z",
     expiryMode: "manual" as const,
   };
+  it("builds validated UTF-8 attach and preflight commands", () => {
+    expect(buildPersistentTmuxHasSessionCommand(input.name)).toBe(
+      "tmux has-session -t 'safe-session'",
+    );
+    expect(buildPersistentTmuxAttachCommand(input.name, true)).toBe(
+      "tmux -u attach-session -r -t 'safe-session'",
+    );
+  });
   it("builds the create command without a working directory", () => {
     const command = buildPersistentTmuxCreateCommand(input);
     expect(command).toContain("tmux new-session -d -s 'safe-session'");

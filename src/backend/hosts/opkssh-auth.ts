@@ -64,7 +64,7 @@ async function createTemplateConfig(): Promise<void> {
   const template = `
 # OPKSSH Configuration
 # OPKSSH Documentation: https://github.com/openpubkey/opkssh/blob/main/docs/config.md
-# Termix Documentation: https://docs.termix.site/features/authentication/opkssh
+# Termix documentation (upstream): https://docs.termix.site/features/authentication/opkssh
 `;
 
   try {

@@ -15,11 +15,11 @@ export function detectPlatform(req: Request): DeviceType {
   const userAgent = req.headers["user-agent"] || "";
   const electronHeader = req.headers["x-electron-app"];
 
-  if (electronHeader === "true" || userAgent.includes("Termix-Desktop")) {
+  if (electronHeader === "true" || /Termix-Desktop/.test(userAgent)) {
     return "desktop";
   }
 
-  if (userAgent.includes("Termix-Mobile")) {
+  if (/Termix-Mobile/.test(userAgent)) {
     return "mobile";
   }
 

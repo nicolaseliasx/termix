@@ -12,8 +12,7 @@ import {
 } from "../../hosts/sessions/errors.js";
 import { SshPersistentSessionGateway } from "../../hosts/sessions/gateway.js";
 import { PersistentSessionLifecycleService } from "../../hosts/sessions/lifecycle.js";
-import { PersistentSessionReconciler } from "../../hosts/sessions/reconciler.js";
-import { resolveHostById } from "../../hosts/host-resolver.js";
+import { getPersistentSessionReconciler } from "../../hosts/sessions/maintenance.js";
 
 const router = express.Router();
 const auth = AuthManager.getInstance();
@@ -23,17 +22,6 @@ function service() {
   return new PersistentSessionLifecycleService(
     createCurrentPersistentSessionRepository(),
     new SshPersistentSessionGateway(),
-  );
-}
-function reconciler() {
-  return new PersistentSessionReconciler(
-    createCurrentPersistentSessionRepository(),
-    new SshPersistentSessionGateway(),
-    async () =>
-      (await createCurrentHostResolutionRepository().listAllHosts()).map(
-        (host) => ({ id: host.id, userId: host.userId }),
-      ),
-    resolveHostById,
   );
 }
 function fail(res: Response, error: unknown): void {
@@ -178,7 +166,7 @@ router.post(
         await createCurrentHostResolutionRepository().listAllHosts();
       // Resolve as the caller so shared-host permissions are honoured and no
       // inaccessible host can be scanned or exposed in the response.
-      const result = await reconciler().reconcileHosts(
+      const result = await getPersistentSessionReconciler().reconcileHosts(
         hosts.map((host) => ({ id: host.id, userId })),
       );
       res.json({ data: { hosts: result.results } });
@@ -200,7 +188,7 @@ router.post(
       );
     try {
       res.json({
-        data: await service().refresh(
+        data: await getPersistentSessionReconciler().reconcileHost(
           hostId,
           (req as AuthenticatedRequest).userId,
         ),

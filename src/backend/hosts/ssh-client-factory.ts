@@ -27,16 +27,22 @@ export function getFleetPoolKey(host: SSHHost): string {
   return `fleet:${host.userId}:${host.ip}:${host.port}:${host.username}${socks5Key}`;
 }
 
+export interface FleetSshFactoryOptions {
+  readyTimeoutMs?: number;
+}
+
 export async function buildFleetSshConfig(
   host: SSHHost,
+  options: FleetSshFactoryOptions = {},
 ): Promise<ConnectConfig> {
+  const readyTimeoutMs = options.readyTimeoutMs ?? 30_000;
   const base: ConnectConfig = {
     host: host.ip?.replace(/^\[|\]$/g, "") || host.ip,
     port: host.port,
     username: host.username,
     keepaliveInterval: 30000,
     keepaliveCountMax: 3,
-    readyTimeout: 30000,
+    readyTimeout: readyTimeoutMs,
     tcpKeepAlive: true,
     tcpKeepAliveInitialDelay: 30000,
     hostVerifier: await SSHHostKeyVerifier.createHostVerifier(
@@ -117,9 +123,13 @@ export async function buildFleetSshConfig(
   return base;
 }
 
-export function createFleetSshFactory(host: SSHHost): () => Promise<Client> {
+export function createFleetSshFactory(
+  host: SSHHost,
+  options: FleetSshFactoryOptions = {},
+): () => Promise<Client> {
   return async () => {
-    const config = await buildFleetSshConfig(host);
+    const config = await buildFleetSshConfig(host, options);
+    const readyTimeoutMs = options.readyTimeoutMs ?? 30_000;
     const client = new Client();
 
     const proxyConfig: SOCKS5Config | null =
@@ -164,13 +174,25 @@ export function createFleetSshFactory(host: SSHHost): () => Promise<Client> {
     }
 
     return new Promise<Client>((resolve, reject) => {
-      const timeout = setTimeout(() => {
+      let settled = false;
+      const fail = (error: Error) => {
+        if (settled) return;
+        settled = true;
+        clearTimeout(timeout);
         client.end();
         jumpClient?.end();
-        reject(new Error("SSH connection timeout"));
-      }, 30000);
+        reject(error);
+      };
+      const timeout = setTimeout(() => {
+        fail(new Error(`SSH connection timeout after ${readyTimeoutMs}ms`));
+      }, readyTimeoutMs);
 
       client.on("ready", () => {
+        if (settled) {
+          client.end();
+          return;
+        }
+        settled = true;
         clearTimeout(timeout);
         resolve(client);
       });
@@ -180,9 +202,7 @@ export function createFleetSshFactory(host: SSHHost): () => Promise<Client> {
       });
 
       client.on("error", (err) => {
-        clearTimeout(timeout);
-        jumpClient?.end();
-        reject(err);
+        fail(err);
       });
 
       if (jumpClient) {
@@ -193,9 +213,7 @@ export function createFleetSshFactory(host: SSHHost): () => Promise<Client> {
           host.port,
           (err, stream) => {
             if (err) {
-              clearTimeout(timeout);
-              jumpClient!.end();
-              reject(
+              fail(
                 new Error(
                   "Failed to forward through jump host: " + err.message,
                 ),
@@ -211,11 +229,11 @@ export function createFleetSshFactory(host: SSHHost): () => Promise<Client> {
       } else {
         resolveSshConnectConfigHost(config)
           .then(() => {
+            if (settled) return;
             client.connect(config);
           })
           .catch((error) => {
-            clearTimeout(timeout);
-            reject(error);
+            fail(error instanceof Error ? error : new Error(String(error)));
           });
       }
     });

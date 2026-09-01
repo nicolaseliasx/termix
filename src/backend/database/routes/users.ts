@@ -145,7 +145,7 @@ function getOidcSilentLoginDefaultFromEnv(): boolean | undefined {
 
 function isNativeAppRequest(req: Request): boolean {
   return (
-    (req.get("User-Agent") || "").startsWith("Termix-Mobile/") ||
+    /^Termix-Mobile\//.test(req.get("User-Agent") || "") ||
     req.get("X-Electron-App") === "true"
   );
 }

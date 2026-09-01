@@ -43,7 +43,11 @@ export function buildPersistentTmuxAttachCommand(
   name: string,
   readOnly: boolean,
 ): string {
-  return `tmux attach-session ${readOnly ? "-r " : ""}-t ${target(name)}`;
+  return `tmux -u attach-session ${readOnly ? "-r " : ""}-t ${target(name)}`;
+}
+
+export function buildPersistentTmuxHasSessionCommand(name: string): string {
+  return `tmux has-session -t ${target(name)}`;
 }
 
 export function buildPersistentTmuxKillCommand(
