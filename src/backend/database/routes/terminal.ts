@@ -26,6 +26,7 @@ import {
 import { authLogger, databaseLogger } from "../../utils/logger.js";
 import { AuthManager } from "../../utils/auth-manager.js";
 import { sessionManager } from "../../hosts/terminal/session-manager.js";
+import { persistentAttachmentManager } from "../../hosts/sessions/persistent-attachment-manager.js";
 import {
   createCurrentCommandHistoryRepository,
   createCurrentHostResolutionRepository,
@@ -47,10 +48,10 @@ const imageUpload = multer({
   storage: multer.memoryStorage(),
   limits: {
     fileSize: 50 * 1024 * 1024,
-    fields: 4,
+    fields: 5,
     fieldSize: 64 * 1024,
     files: 1,
-    parts: 5,
+    parts: 6,
     headerPairs: 200,
   },
 });
@@ -108,14 +109,29 @@ async function handleImageUploadMiddleware(
     }
   });
 }
-function findTerminalSession(userId: string, instanceId: string) {
-  return sessionManager
-    .getUserSessions(userId)
-    .find(
-      (session) =>
-        (session.attachedTabInstanceId ?? session.tabInstanceId) ===
-          instanceId && session.isConnected,
-    );
+function findTerminalSession(
+  userId: string,
+  instanceId: string,
+  hostId?: string,
+) {
+  const sessions = sessionManager.getUserSessions(userId);
+  const matchingInstance = sessions.find(
+    (session) =>
+      (session.attachedTabInstanceId ?? session.tabInstanceId) === instanceId &&
+      session.isConnected &&
+      session.sshConn,
+  );
+  if (matchingInstance) return matchingInstance;
+
+  const numericHostId = Number(hostId);
+  return Number.isInteger(numericHostId)
+    ? sessions.find(
+        (session) =>
+          session.hostId === numericHostId &&
+          session.isConnected &&
+          session.sshConn,
+      )
+    : undefined;
 }
 
 router.post(
@@ -126,6 +142,7 @@ router.post(
   async (req: Request, res: Response) => {
     const userId = (req as AuthenticatedRequest).userId;
     const instanceId = req.body?.instanceId;
+    const hostId = req.body?.hostId;
     if (!req.file) {
       return res.status(400).json({
         error: "Image required",
@@ -164,18 +181,32 @@ router.post(
     const storageSettings = await resolveTerminalImageStorageSettings(
       createCurrentSettingsRepository(),
     );
-    const session = isNonEmptyString(instanceId)
-      ? findTerminalSession(userId, instanceId)
-      : undefined;
+    const session =
+      isNonEmptyString(instanceId) || isNonEmptyString(hostId)
+        ? findTerminalSession(
+            userId,
+            isNonEmptyString(instanceId) ? instanceId : "",
+            typeof hostId === "string" ? hostId : undefined,
+          )
+        : undefined;
+    const numericHostId = Number(hostId);
+    const persistentSshConn =
+      !session && Number.isInteger(numericHostId)
+        ? persistentAttachmentManager.getConnectionForHost(
+            userId,
+            numericHostId,
+          )
+        : null;
+    const sshConn = session?.sshConn ?? persistentSshConn;
     let localHostVisible = false;
-    if (storageSettings.localMappingConfigured && session?.sshConn) {
+    if (storageSettings.localMappingConfigured && sshConn) {
       localHostVisible = await probeLocalImageVisibility(
-        session.sshConn,
+        sshConn,
         storageSettings,
       ).catch(() => false);
     }
     const storageMode = selectImageStorageMode(storageSettings, {
-      remoteSftpAvailable: !!session?.sshConn,
+      remoteSftpAvailable: !!sshConn,
       localHostVisible,
     });
 
@@ -200,7 +231,7 @@ router.post(
           code: "IMAGE_SESSION_MISSING",
         });
       }
-      if (!session || !session.sshConn) {
+      if (!sshConn) {
         return res.status(409).json({
           error: "Terminal is not connected",
           code: "IMAGE_TERMINAL_NOT_CONNECTED",
@@ -264,7 +295,7 @@ router.post(
                     settled = true;
                     reject(new Error("SFTP channel acquisition timed out"));
                   }, 3_000);
-                  session!.sshConn!.sftp((err, sftp) => {
+                  sshConn!.sftp((err, sftp) => {
                     if (settled) {
                       sftp?.end?.();
                       return;

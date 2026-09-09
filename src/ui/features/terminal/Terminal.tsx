@@ -57,6 +57,7 @@ import { useCommandHistory } from "@/features/terminal/command-history/CommandHi
 import { getAndroidHardwareKeySequence } from "@/features/terminal/android-hardware-keyboard.ts";
 import {
   buildImageUploadFormData,
+  getPastedImageFile,
   type TerminalImageUploadSource,
 } from "@/features/terminal/terminal-image-upload.ts";
 import { CommandAutocomplete } from "./command-history/CommandAutocomplete.tsx";
@@ -238,6 +239,7 @@ const TerminalInner = forwardRef<TerminalHandle, SSHTerminalProps>(
     const [isSavingQuickConnect, setIsSavingQuickConnect] = useState(false);
     const [isQuickConnectSaved, setIsQuickConnectSaved] = useState(false);
     const [isImageUploading, setIsImageUploading] = useState(false);
+    const isImageUploadingRef = useRef(false);
     const [isConnecting, setIsConnecting] = useState(false);
     const [isFitted, setIsFitted] = useState(false);
     const [connectionError, setConnectionError] = useState<string | null>(null);
@@ -2693,6 +2695,16 @@ const TerminalInner = forwardRef<TerminalHandle, SSHTerminalProps>(
       });
 
       const handlePaste = (e: ClipboardEvent) => {
+        const image = e.clipboardData
+          ? getPastedImageFile(e.clipboardData)
+          : null;
+        if (image) {
+          e.preventDefault();
+          e.stopPropagation();
+          void handleImageUpload(image, "clipboard");
+          return;
+        }
+
         const text = e.clipboardData?.getData("text");
         if (text) {
           e.preventDefault();
@@ -2700,7 +2712,9 @@ const TerminalInner = forwardRef<TerminalHandle, SSHTerminalProps>(
           terminal.paste(text);
         }
       };
-      element?.addEventListener("paste", handlePaste);
+      // xterm may stop a paste event on its hidden textarea, so observe it
+      // during capture before xterm's own paste handler runs.
+      element?.addEventListener("paste", handlePaste, true);
 
       let tmuxDragTracking = false;
       const handleTmuxDragStart = (e: MouseEvent) => {
@@ -2779,7 +2793,7 @@ const TerminalInner = forwardRef<TerminalHandle, SSHTerminalProps>(
         resizeObserver.disconnect();
         clipboardProvider.dispose();
         element?.removeEventListener("contextmenu", handleContextMenu);
-        element?.removeEventListener("paste", handlePaste);
+        element?.removeEventListener("paste", handlePaste, true);
         element?.removeEventListener("mousedown", handleTmuxDragStart);
         element?.removeEventListener("mousemove", handleTmuxDragMove);
         element?.removeEventListener("mouseup", handleTmuxDragEnd);
@@ -3112,9 +3126,18 @@ const TerminalInner = forwardRef<TerminalHandle, SSHTerminalProps>(
           !e.metaKey &&
           isPhysicalShortcutKey(e, "KeyV", "v")
         ) {
-          // Let the browser handle Ctrl+V natively, the paste event
-          // listener will intercept the result without triggering the
-          // clipboard permission popup
+          // Some xterm/browser combinations suppress the native paste event.
+          // Read the clipboard during this user gesture so image pastes work
+          // there too; fall back to the usual text paste when no image exists.
+          e.preventDefault();
+          e.stopPropagation();
+          void handleClipboardImage(false).then((pastedImage) => {
+            if (!pastedImage) {
+              readTextFromClipboard().then((text) => {
+                if (text) terminal.paste(text);
+              });
+            }
+          });
           return false;
         }
 
@@ -3454,16 +3477,20 @@ const TerminalInner = forwardRef<TerminalHandle, SSHTerminalProps>(
       file: File,
       source: TerminalImageUploadSource,
     ) {
+      if (isImageUploadingRef.current) return;
       if (file.type && !file.type.startsWith("image/")) {
         toast.error("Choose an image file");
         return;
       }
+      isImageUploadingRef.current = true;
       setIsImageUploading(true);
       try {
         const form = buildImageUploadFormData(
           file,
           hostConfig.instanceId ?? "",
           source,
+          undefined,
+          hostConfig.id,
         );
         const response = await authApi.post("/terminal/image-upload", form, {
           headers: { "Content-Type": undefined },
@@ -3493,16 +3520,22 @@ const TerminalInner = forwardRef<TerminalHandle, SSHTerminalProps>(
         const message = getImageUploadErrorMessage(error);
         toast.error(code ? `${message} (${code})` : message);
       } finally {
+        isImageUploadingRef.current = false;
         setIsImageUploading(false);
       }
     }
 
-    async function handleClipboardImage() {
+    async function handleClipboardImage(
+      showMissingError = true,
+    ): Promise<boolean> {
       if (!navigator.clipboard?.read) {
-        toast.error("Clipboard image access is not available in this browser");
-        return;
+        if (showMissingError) {
+          toast.error(
+            "Clipboard image access is not available in this browser",
+          );
+        }
+        return false;
       }
-      setIsImageUploading(true);
       try {
         const items = await navigator.clipboard.read();
         for (const item of items) {
@@ -3549,13 +3582,15 @@ const TerminalInner = forwardRef<TerminalHandle, SSHTerminalProps>(
             }
           }
           await handleImageUpload(clipboardFile, "clipboard");
-          return;
+          return true;
         }
-        toast.error("No image found in the clipboard");
+        if (showMissingError) toast.error("No image found in the clipboard");
+        return false;
       } catch (error) {
-        toast.error(getErrorMessage(error, "Clipboard read failed"));
-      } finally {
-        setIsImageUploading(false);
+        if (showMissingError) {
+          toast.error(getErrorMessage(error, "Clipboard read failed"));
+        }
+        return false;
       }
     }
 

@@ -27,6 +27,7 @@ export interface PersistentAttachment {
 }
 
 interface ActiveAttachment extends PersistentAttachment {
+  hostId: number;
   socket: PersistentAttachmentSocket;
   connection: Client;
   stream: ClientChannel;
@@ -143,6 +144,7 @@ export class PersistentAttachmentManager {
     }
     const active: ActiveAttachment = {
       ...attachment,
+      hostId: record.hostId,
       socket,
       connection,
       stream,
@@ -259,6 +261,20 @@ export class PersistentAttachmentManager {
     // flight. Neither operation sends a tmux kill command.
     active.stream.destroy();
     active.connection.end();
+  }
+
+  /** Returns a live SSH transport for a user's persistent terminal on a host. */
+  getConnectionForHost(userId: string, hostId: number): Client | null {
+    for (const active of this.attachments.values()) {
+      if (
+        active.userId === userId &&
+        active.hostId === hostId &&
+        active.ready
+      ) {
+        return active.connection;
+      }
+    }
+    return null;
   }
 
   async attach(input: {
