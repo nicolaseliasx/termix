@@ -14,6 +14,8 @@ export type PersistentSession = {
   lastDetachedAt: string | null;
   expiresAt: string | null;
   lastObservedAt: string | null;
+  /** Set while the reconciler keeps the session's pane processes frozen. */
+  hibernatedAt: string | null;
   endedAt: string | null;
   endReason: string | null;
 };
@@ -141,12 +143,14 @@ export async function patchPersistentSession(
 
 export async function killPersistentSession(
   id: string,
+  options: { force?: boolean } = {},
 ): Promise<PersistentSession> {
   try {
     return unwrap(
       (
         await authApi.delete<ApiEnvelope<PersistentSession>>(
           `${API_BASE}/persistent-sessions/${id}`,
+          { params: options.force ? { force: "true" } : undefined },
         )
       ).data,
     );

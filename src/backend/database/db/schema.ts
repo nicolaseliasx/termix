@@ -1409,6 +1409,7 @@ export const persistentSessions = sqliteTable(
     createdAt: text("created_at").notNull().default(sql`CURRENT_TIMESTAMP`),
     lastAttachedAt: text("last_attached_at"), lastDetachedAt: text("last_detached_at"),
     expiresAt: text("expires_at"), lastObservedAt: text("last_observed_at"),
+    hibernatedAt: text("hibernated_at"),
     endedAt: text("ended_at"), endReason: text("end_reason"),
   },
   (table) => [

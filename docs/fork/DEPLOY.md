@@ -1,18 +1,18 @@
 # Fork Deploy Notes
 
 Current deployment of this fork on the LAN host (`devhub`) is Termix, exposed through
-the public hostname `https://tserver.ncls.cc` and protected by native authentication.
+the public hostname `https://termix.ncls.cc` and protected by native authentication.
 
 ## Stack
 
 - `docker/docker-compose.local.yml` — local compose profile:
-  - `tserver`: image `tserver:latest`, built from `docker/Dockerfile` (repo root context),
+  - `termix`: image `termix:latest`, built from `docker/Dockerfile` (repo root context),
     loopback HTTPS on port `8443`, env `ENABLE_SSL=true`,
-    `SSL_DOMAIN=tserver.ncls.cc`, `ALLOW_REGISTRATION=false`,
-    `ENABLE_TELEMETRY=false`, `PUID/PGID=1001`, named volume `tserver-data` mounted at
+    `SSL_DOMAIN=termix.ncls.cc`, `ALLOW_REGISTRATION=false`,
+    `ENABLE_TELEMETRY=false`, `PUID/PGID=1001`, named volume `termix-data` mounted at
     `/app/data`.
-  - `tserver-guacd`: `guacamole/guacd:1.6.0` (RDP/VNC/Telnet backend), shares
-    `tserver-data` for session recordings.
+  - `termix-guacd`: `guacamole/guacd:1.6.0` (RDP/VNC/Telnet backend), shares
+    `termix-data` for session recordings.
 - Local-only deploy: `docker compose -f docker/docker-compose.local.yml up -d --no-build`.
 - LAN fallback deploy: add the ignored, machine-local
   `-f docker/docker-compose.lan.yml` override. It contains the private bind address and
@@ -47,7 +47,7 @@ Relevant diff (see commit `chore(fork): local theme, SSL SAN for IP domain and c
 
 ## Access
 
-- Public URL: `https://tserver.ncls.cc`, protected by Termix's native authentication.
+- Public URL: `https://termix.ncls.cc`, protected by Termix's native authentication.
   The origin is the loopback HTTPS listener through the user-level `cloudflared`
   connector; no plaintext Termix port is published. The optional LAN listener exists
   only in the ignored local override.
@@ -140,20 +140,20 @@ Relevant diff (see commit `chore(fork): local theme, SSL SAN for IP domain and c
 
 ## Sessions split, terminal input, and compact rail deploy (2026-09-01)
 
-- Backup: `/home/admin/termix/backups/tserver-data-20260901-140719.tar.gz`
+- Backup: `/home/admin/termix/backups/termix-data-20260901-140719.tar.gz`
   (`sha256:f24f36f56867122a44112b3817d69b7cbdc7c46dd5d86157c71e008fbdfa5365`,
-  12,649,170 bytes, mode `0640`), created from the read-only `tserver-data`
+  12,649,170 bytes, mode `0640`), created from the read-only `termix-data`
   volume and verified with `tar -tzf`.
-- Deployed image: `tserver:candidate-20260901-140719`
+- Deployed image: `termix:candidate-20260901-140719`
   (`sha256:fdf8356fbe81e240a6d75d0873d29dbc2da3ba04398b8f822b17c2565ce1a019`),
   built with `TERMIX_BUILD_PROFILE=custom` and
   `FEATURE_SPLIT_TERMINAL=true`.
-- Rollback image: `tserver:rollback-20260901-140719` (the image running
+- Rollback image: `termix:rollback-20260901-140719` (the image running
   immediately before this deploy). Roll back without changing persistent data:
 
   ```sh
-  docker tag tserver:rollback-20260901-140719 tserver:latest
-  docker compose -f docker/docker-compose.local.yml up -d --no-build tserver
+  docker tag termix:rollback-20260901-140719 termix:latest
+  docker compose -f docker/docker-compose.local.yml up -d --no-build termix
   ```
 
 - An isolated candidate with a temporary volume passed Docker health, backend
@@ -161,6 +161,6 @@ Relevant diff (see commit `chore(fork): local theme, SSL SAN for IP domain and c
   and unauthenticated persistent-sessions `401` before promotion.
 - Production passed Docker health, backend health (`30001` → `{"status":"ok"}`),
   loopback HTTPS (`8443` → `200`), persistent-sessions auth (`401`), Sessions
-  and SplitScreen asset discovery, preserved the `tserver-data` mount, and had
+  and SplitScreen asset discovery, preserved the `termix-data` mount, and had
   no startup error/fatal entries. Public validation was not available from the
-  host because `tserver.ncls.cc` did not resolve at deploy time.
+  host because `termix.ncls.cc` did not resolve at deploy time.

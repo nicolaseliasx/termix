@@ -2691,7 +2691,21 @@ const TerminalInner = forwardRef<TerminalHandle, SSHTerminalProps>(
       element?.addEventListener("contextmenu", handleContextMenu);
 
       const selectionDisposable = terminal.onSelectionChange(() => {
-        setHasSelection(terminal.hasSelection());
+        const hasSelection = terminal.hasSelection();
+        setHasSelection(hasSelection);
+        if (!hasSelection) return;
+
+        // Copy directly from xterm's selection event, while the mouse/keyboard
+        // gesture is still active. This keeps Chromium's Clipboard permission
+        // path available and falls back to the legacy copy implementation for
+        // restrictive browsers. Keep the highlight: it lets the user inspect
+        // or retry the selection without copying it again by hand.
+        const selection = terminal.getSelection();
+        // A selection changes for every cell crossed while dragging. Automatic
+        // copy is intentionally silent: a browser that denies clipboard
+        // access must not produce a toast storm; manual copy still reports an
+        // actionable error through writeTextToClipboard.
+        if (selection) void copyToClipboard(selection);
       });
 
       const handlePaste = (e: ClipboardEvent) => {
@@ -3398,6 +3412,15 @@ const TerminalInner = forwardRef<TerminalHandle, SSHTerminalProps>(
 
       const verifyConnectionAfterResume = () => {
         if (document.visibilityState !== "visible") return;
+
+        // Chromium can restore the xterm canvas from a stale compositor layer
+        // after a reload, tab restore or VM graphics stall. Refit first, then
+        // paint the entire viewport on the following frame; this redraws the
+        // local buffer without reconnecting or changing the tmux session.
+        requestAnimationFrame(() => {
+          performFit();
+          requestAnimationFrame(hardRefresh);
+        });
 
         const ws = webSocketRef.current;
         if (ws?.readyState === WebSocket.OPEN) {

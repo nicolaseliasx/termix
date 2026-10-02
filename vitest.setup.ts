@@ -1,3 +1,4 @@
+import "@testing-library/jest-dom/vitest";
 import { afterEach, vi } from "vitest";
 
 if (typeof window !== "undefined" && !window.matchMedia) {

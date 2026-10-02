@@ -2,8 +2,8 @@
 
 ## Architecture
 
-`https://tserver.ncls.cc` is a proxied Cloudflare DNS CNAME to the remotely managed
-tunnel `tserver`. Cloudflare sends it to `https://127.0.0.1:8443`; the tunnel's loopback
+`https://termix.ncls.cc` is a proxied Cloudflare DNS CNAME to the remotely managed
+tunnel `termix`. Cloudflare sends it to `https://127.0.0.1:8443`; the tunnel's loopback
 origin uses `noTLSVerify=true` only for this self-signed local certificate. Termix is
 public at the Cloudflare boundary and relies on its native authentication. The connector
 is a user-level systemd service and is persistent across logout because `Linger=yes` is
@@ -11,12 +11,12 @@ enabled for `admin`.
 
 Active deployment names:
 
-- Compose project: `tserver`
-- Application container/image: `tserver` / `tserver:latest`
-- Guacamole container: `tserver-guacd`
-- Volume/network: `tserver-data` / `tserver-net`
-- Connector unit: `cloudflared-tserver.service`
-- Runtime token: `/home/admin/.config/cloudflared/tserver.token` (mode `0600`)
+- Compose project: `termix`
+- Application container/image: `termix` / `termix:latest`
+- Guacamole container: `termix-guacd`
+- Volume/network: `termix-data` / `termix-net`
+- Connector unit: `cloudflared-termix.service`
+- Runtime token: `/home/admin/.config/cloudflared/termix.token` (mode `0600`)
 - Connector binary: `/home/admin/.local/bin/cloudflared`
 - Local metrics: `127.0.0.1:20241`
 
@@ -62,9 +62,9 @@ Docker publishes port `8443` separately on loopback for the tunnel and on the ex
 address configured in the ignored `docker/docker-compose.lan.yml` override; it is not
 bound to every interface or to a public address.
 The native Termix login remains mandatory. Because the local certificate is generated
-for `tserver.ncls.cc`, a browser using the IP address can show a certificate-name warning;
+for `termix.ncls.cc`, a browser using the IP address can show a certificate-name warning;
 this is expected for emergency LAN access. A clean certificate experience during an
-Internet outage requires split-horizon DNS on the LAN router, mapping `tserver.ncls.cc`
+Internet outage requires split-horizon DNS on the LAN router, mapping `termix.ncls.cc`
 to the private Termix LAN address.
 
 The fallback depends on the VM retaining its private address. Reserve it in the router
@@ -80,9 +80,9 @@ operator notes, never in this repository.
 The exact self-hosted Access applications `gym` and `licitacoes` each have a `720h`
 session. Their policy is `owner-only`: decision `allow`, precedence `1`, and
 the exact email `nicolaselias@pm.me`; One-Time PIN is the configured identity provider.
-Organization team name is `tserver-ncls` because the requested `tserver` team name was
+Organization team name is `termix-ncls` because the requested `termix` team name was
 unavailable. There is intentionally no Access application or bypass policy for
-`tserver.ncls.cc` or `mercado.ncls.cc`; authentication happens inside each application.
+`termix.ncls.cc` or `mercado.ncls.cc`; authentication happens inside each application.
 
 To add a future private web app, create and verify its Cloudflare Access application
 and least-privilege policy first, then add exactly one hostname ingress rule and its
@@ -126,15 +126,15 @@ access will require a separately scoped Access service token.
 ## Service operations and diagnostics
 
 ```sh
-systemctl --user status cloudflared-tserver.service
-systemctl --user restart cloudflared-tserver.service
-systemctl --user is-active cloudflared-tserver.service
+systemctl --user status cloudflared-termix.service
+systemctl --user restart cloudflared-termix.service
+systemctl --user is-active cloudflared-termix.service
 curl -fsS http://127.0.0.1:20241/ready
 curl -fsS http://127.0.0.1:20241/metrics
-journalctl --user -u cloudflared-tserver.service -e
+journalctl --user -u cloudflared-termix.service -e
 docker compose -f docker/docker-compose.local.yml ps
-docker logs --tail 200 tserver
-docker logs --tail 200 tserver-guacd
+docker logs --tail 200 termix
+docker logs --tail 200 termix-guacd
 ss -ltnp
 ```
 
@@ -143,22 +143,22 @@ persistent-session errors in the connector and Termix logs. Metrics must remain 
 to loopback only. Verify that Docker publishes only `127.0.0.1:8443->8443/tcp`.
 
 For token rotation, issue a new tunnel-specific token from the Cloudflare dashboard/API,
-write only that token to `/home/admin/.config/cloudflared/tserver.token` with mode
+write only that token to `/home/admin/.config/cloudflared/termix.token` with mode
 `0600`, then restart and verify the service and tunnel health. Never place the Cloudflare
 API token in this file or in the repository.
 
 ## Backup and migration record
 
-The legacy `docker_termix-data` volume was stopped and copied read-only to `tserver-data`.
+The legacy `docker_termix-data` volume was stopped and copied read-only to `termix-data`.
 The legacy volume and its `termix`/`guacd` containers remain intact for rollback. The
 verified cold backup is:
 
-`/home/admin/termix/backups/termix-data-pre-tserver-20260830-122334.tar.gz`
+`/home/admin/termix/backups/termix-data-pre-termix-20260830-122334.tar.gz`
 
 SHA-256: `f9cfe5d66ef44db7d9e24fd5b5f7ed25fd3b752fb8058cbd5935056cc0aa0bbf`;
 owner `admin:admin`, mode `0640`. The copied database and persistent files matched in
 count, bytes, and SHA-256. Only the new volume's `ssl/termix.crt` and `ssl/termix.key`
-were removed so Termix could generate its `tserver.ncls.cc` certificate; the legacy
+were removed so Termix could generate its `termix.ncls.cc` certificate; the legacy
 files were not changed.
 
 ## Exact rollback
@@ -167,7 +167,7 @@ If post-cutover validation fails:
 
 ```sh
 docker compose -f docker/docker-compose.local.yml down
-systemctl --user stop cloudflared-tserver.service
+systemctl --user stop cloudflared-termix.service
 docker start guacd
 docker start termix
 docker inspect termix guacd
@@ -175,6 +175,6 @@ docker inspect termix guacd
 
 Confirm the legacy containers' health and old port bindings. Keep both data volumes for
 diagnosis; never copy data backward automatically. The pre-cutover image is
-`docker-termix:rollback-pre-tserver-20260830-122334`, and the untouched rollback volume
+`docker-termix:rollback-pre-termix-20260830-122334`, and the untouched rollback volume
 is `docker_termix-data`. Do not delete the legacy containers, volume/network, rollback
 image, or verified backup without a separate explicit request.

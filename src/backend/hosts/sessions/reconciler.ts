@@ -1,7 +1,10 @@
 import type { SSHHost } from "../../../types/index.js";
 import { randomUUID } from "node:crypto";
 import { createConnection } from "node:net";
-import type { PersistentSessionRepository } from "../../database/repositories/persistent-session-repository.js";
+import type {
+  PersistentSessionRecord,
+  PersistentSessionRepository,
+} from "../../database/repositories/persistent-session-repository.js";
 import { systemLogger } from "../../utils/logger.js";
 import type { PersistentSessionGateway } from "./gateway.js";
 import type { RemotePersistentSession } from "./types.js";
@@ -13,6 +16,8 @@ export type PersistentSessionHostResult = {
   observed: number;
   adopted: number;
   missing: number;
+  hibernated: number;
+  thawed: number;
 };
 export type PersistentSessionReconcileResult = {
   hosts: number;
@@ -26,11 +31,18 @@ export type PersistentSessionReconcileResult = {
 type FailureState = { failures: number; nextTry: number; lastLog: number };
 type ReconcilerOptions = {
   reachability?: (host: SSHHost, timeoutMs: number) => Promise<boolean>;
+  /** Idle hours before a session's pane processes are frozen; 0 disables. */
+  hibernateIdleHours?: () => Promise<number>;
+  /** Live termix attachments for a session id (freeze never touches them). */
+  attachedClients?: (sessionId: string) => number;
 };
 
 const MAX_ACTIVE_HOSTS = 4;
 const BACKOFF_MS = [300_000, 900_000, 1_800_000, 3_600_000];
 const FAST_GATE_TIMEOUT_MS = 2_000;
+const HIBERNATE_IDLE_HOURS_SETTING = "persistent_session_idle_hibernate_hours";
+const DEFAULT_IDLE_HIBERNATE_HOURS = 6;
+const HIBERNATE_HOURS_CACHE_MS = 60_000;
 
 /**
  * Observes tmux without treating an unavailable host as a missing session.
@@ -55,6 +67,9 @@ export class PersistentSessionReconciler {
     host: SSHHost,
     timeoutMs: number,
   ) => Promise<boolean>;
+  private readonly hibernateIdleHoursReader: () => Promise<number>;
+  private readonly attachedClients: (sessionId: string) => number;
+  private hibernateHoursCache: { value: number; expires: number } | undefined;
 
   constructor(
     private readonly repository: PersistentSessionRepository,
@@ -68,6 +83,9 @@ export class PersistentSessionReconciler {
     options: ReconcilerOptions = {},
   ) {
     this.reachability = options.reachability ?? probeTcpReachability;
+    this.hibernateIdleHoursReader =
+      options.hibernateIdleHours ?? readConfiguredHours;
+    this.attachedClients = options.attachedClients ?? (() => 0);
   }
 
   start(): void {
@@ -178,6 +196,8 @@ export class PersistentSessionReconciler {
           observed: 0,
           adopted: 0,
           missing: 0,
+          hibernated: 0,
+          thawed: 0,
         };
       }
       if (!(await this.reachability(host, FAST_GATE_TIMEOUT_MS))) {
@@ -188,6 +208,8 @@ export class PersistentSessionReconciler {
           observed: 0,
           adopted: 0,
           missing: 0,
+          hibernated: 0,
+          thawed: 0,
         };
       }
 
@@ -197,6 +219,8 @@ export class PersistentSessionReconciler {
         observed: 0,
         adopted: 0,
         missing: 0,
+        hibernated: 0,
+        thawed: 0,
       };
       let remote;
       try {
@@ -237,9 +261,14 @@ export class PersistentSessionReconciler {
           );
           hostResult.missing++;
         } else if (observed.marker?.id === row.id) {
-          await this.repository.update(row.id, hostInfo.userId, {
-            lastObservedAt: timestamp,
-          });
+          await this.repository.touchLastObserved(row.id, timestamp);
+          await this.applyHibernationPolicy(
+            host,
+            row,
+            observed,
+            hostInfo.userId,
+            hostResult,
+          );
         } else {
           await this.repository.recordEvent(row.id, "marker_mismatch", {
             actorId: hostInfo.userId,
@@ -341,6 +370,99 @@ export class PersistentSessionReconciler {
       });
     }
   }
+
+  private async applyHibernationPolicy(
+    host: SSHHost,
+    row: PersistentSessionRecord,
+    observed: RemotePersistentSession,
+    userId: string,
+    result: PersistentSessionHostResult,
+  ): Promise<void> {
+    const idleHours = await this.getHibernateIdleHours();
+    if (idleHours <= 0) return;
+
+    // A browser transport or an attached tmux client always wins over the
+    // inactivity clock. A hibernated session is woken before attach as a
+    // second layer of defence by buildPersistentTmuxAttachCommand.
+    const hasLiveClient =
+      observed.attachedClients > 0 || this.attachedClients(row.id) > 0;
+    if (row.hibernatedAt) {
+      if (hasLiveClient) {
+        await this.gateway.thaw(host, row.tmuxSessionName);
+        await this.repository.setHibernatedAt(row.id, userId, null);
+        result.thawed += 1;
+        return;
+      }
+      // An attach thaws the panes inline (SIGCONT) and can detach before any
+      // reconciler pass observes the client. Recent activity means the
+      // session was used: clear the stale marker and let the idle clock run
+      // again. Otherwise re-assert the freeze so a partially thawed session
+      // still stops consuming CPU. SIGSTOP is idempotent.
+      const activityAt = parseTmuxActivityAt(observed.activityAt);
+      const idleMs = activityAt
+        ? this.now().getTime() - activityAt.getTime()
+        : null;
+      if (idleMs !== null && idleMs < idleHours * 60 * 60 * 1000) {
+        await this.repository.setHibernatedAt(row.id, userId, null);
+        return;
+      }
+      await this.gateway.freeze(host, row.tmuxSessionName);
+      return;
+    }
+    if (hasLiveClient) return;
+
+    const activityAt = parseTmuxActivityAt(observed.activityAt);
+    if (!activityAt) return;
+    const idleMs = this.now().getTime() - activityAt.getTime();
+    if (idleMs < idleHours * 60 * 60 * 1000) return;
+
+    await this.gateway.freeze(host, row.tmuxSessionName);
+    await this.repository.setHibernatedAt(
+      row.id,
+      userId,
+      this.now().toISOString(),
+    );
+    result.hibernated += 1;
+  }
+
+  private async getHibernateIdleHours(): Promise<number> {
+    const now = this.now().getTime();
+    if (this.hibernateHoursCache && this.hibernateHoursCache.expires > now)
+      return this.hibernateHoursCache.value;
+    const configured = await this.hibernateIdleHoursReader();
+    const value = Number.isFinite(configured)
+      ? Math.max(0, Math.min(configured, 24 * 365))
+      : DEFAULT_IDLE_HIBERNATE_HOURS;
+    this.hibernateHoursCache = {
+      value,
+      expires: now + HIBERNATE_HOURS_CACHE_MS,
+    };
+    return value;
+  }
+}
+
+async function readConfiguredHours(): Promise<number> {
+  // Keep settings infrastructure out of the reconciler's hot/test import
+  // path. This only runs once per cache window in the production default.
+  const { createCurrentSettingsRepository } =
+    await import("../../database/repositories/factory.js");
+  const raw = await createCurrentSettingsRepository().get(
+    HIBERNATE_IDLE_HOURS_SETTING,
+  );
+  if (raw === null || raw.trim() === "") return DEFAULT_IDLE_HIBERNATE_HOURS;
+  const value = Number(raw);
+  return Number.isFinite(value) ? value : DEFAULT_IDLE_HIBERNATE_HOURS;
+}
+
+function parseTmuxActivityAt(value: string | undefined): Date | null {
+  if (!value) return null;
+  const seconds = Number(value);
+  if (Number.isFinite(seconds) && seconds > 0) {
+    const date = new Date(seconds * 1000);
+    return Number.isNaN(date.getTime()) ? null : date;
+  }
+  const date = new Date(value);
+  return Number.isNaN(date.getTime()) ? null : date;
 }
 
 async function probeTcpReachability(

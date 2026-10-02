@@ -24,6 +24,8 @@ export class PersistentSessionRepository {
   constructor(
     private readonly context: DatabaseContext,
     private readonly onWrite?: () => void | Promise<void>,
+    private readonly onTelemetryWrite:
+      (() => void | Promise<void>) | undefined = onWrite,
   ) {}
 
   async create(
@@ -151,6 +153,7 @@ export class PersistentSessionRepository {
         | "lastObservedAt"
         | "lastAttachedAt"
         | "lastDetachedAt"
+        | "hibernatedAt"
       >
     >,
   ): Promise<PersistentSessionRecord | null> {
@@ -178,10 +181,46 @@ export class PersistentSessionRepository {
     return this.findByIdForUser(id, userId);
   }
 
+  /**
+   * Reconciliation touches this timestamp every minute. It is telemetry, not
+   * lifecycle state, so it deliberately avoids an event row and may use the
+   * debounced persistence hook on encrypted in-memory SQLite deployments.
+   */
+  async touchLastObserved(id: string, lastObservedAt: string): Promise<void> {
+    await this.context.drizzle
+      .update(persistentSessions)
+      .set({ lastObservedAt })
+      .where(eq(persistentSessions.id, id));
+    await this.onTelemetryWrite?.();
+  }
+
+  /** Marks the freeze state of a session's remote pane processes. */
+  async setHibernatedAt(
+    id: string,
+    userId: string,
+    hibernatedAt: string | null,
+  ): Promise<PersistentSessionRecord | null> {
+    const current = await this.findByIdForUser(id, userId);
+    if (!current) return null;
+    if (current.hibernatedAt === hibernatedAt) return current;
+    await this.context.drizzle
+      .update(persistentSessions)
+      .set({ hibernatedAt })
+      .where(eq(persistentSessions.id, id));
+    await this.context.drizzle.insert(persistentSessionEvents).values({
+      sessionId: id,
+      eventType: hibernatedAt ? "hibernated" : "thawed",
+      actorId: userId,
+      details: hibernatedAt ?? null,
+    });
+    await this.afterWrite();
+    return this.findByIdForUser(id, userId);
+  }
+
   async markEnded(
     id: string,
     userId: string,
-    reason: "killed" | "expired" | "disappeared",
+    reason: "killed" | "expired" | "disappeared" | "killed-unreachable",
   ): Promise<PersistentSessionRecord | null> {
     const row = await this.findByIdForUser(id, userId);
     if (!row) return null;

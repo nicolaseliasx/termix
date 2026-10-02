@@ -1412,6 +1412,7 @@ export const persistentSessions = mysqlTable(
     createdAt: varchar("created_at", { length: 255 }).notNull().default(sql`(CURRENT_TIMESTAMP)`),
     lastAttachedAt: text("last_attached_at"), lastDetachedAt: text("last_detached_at"),
     expiresAt: varchar("expires_at", { length: 255 }), lastObservedAt: text("last_observed_at"),
+    hibernatedAt: text("hibernated_at"),
     endedAt: varchar("ended_at", { length: 255 }), endReason: text("end_reason"),
   },
   (table) => [

@@ -7,10 +7,12 @@ import { withConnection } from "../ssh-connection-pool.js";
 import { execCommand, withTmuxPath } from "../tmux/helper.js";
 import {
   buildPersistentTmuxCreateCommand,
+  buildPersistentTmuxFreezeCommand,
   buildPersistentTmuxKillCommand,
   buildPersistentTmuxListCommand,
   buildPersistentTmuxMarkCommand,
   buildPersistentTmuxRenameCommand,
+  buildPersistentTmuxThawCommand,
   parsePersistentTmuxList,
 } from "./tmux-adapter.js";
 import type {
@@ -50,6 +52,8 @@ export interface PersistentSessionGateway {
     input: { oldName: string; newName: string; id: string },
   ): Promise<void>;
   kill(host: SSHHost, name: string, id: string): Promise<void>;
+  freeze(host: SSHHost, name: string): Promise<void>;
+  thaw(host: SSHHost, name: string): Promise<void>;
 }
 export class SshPersistentSessionGateway implements PersistentSessionGateway {
   private async execute(
@@ -118,5 +122,11 @@ export class SshPersistentSessionGateway implements PersistentSessionGateway {
   }
   async kill(host: SSHHost, name: string, id: string): Promise<void> {
     await this.execute(host, buildPersistentTmuxKillCommand(name, id));
+  }
+  async freeze(host: SSHHost, name: string): Promise<void> {
+    await this.execute(host, buildPersistentTmuxFreezeCommand(name));
+  }
+  async thaw(host: SSHHost, name: string): Promise<void> {
+    await this.execute(host, buildPersistentTmuxThawCommand(name));
   }
 }

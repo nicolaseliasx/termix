@@ -1,136 +1,123 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { PersistentSessionLifecycleService } from "../../../hosts/sessions/lifecycle.js";
 import { PersistentSessionError } from "../../../hosts/sessions/errors.js";
-import type { PersistentSessionGateway } from "../../../hosts/sessions/gateway.js";
-import type { PersistentSessionRepository } from "../../../database/repositories/persistent-session-repository.js";
+import type { PersistentSessionRecord } from "../../../database/repositories/persistent-session-repository.js";
 
-describe("PersistentSessionLifecycleService", () => {
-  const host = { id: 1 } as never;
-  const record = {
-    id: "session",
-    userId: "owner",
-    hostId: 1,
-    displayName: "Session",
-    tmuxSessionName: "session",
+function record(): PersistentSessionRecord {
+  return {
+    id: "session-id",
+    userId: "u",
+    hostId: 7,
+    displayName: "codex",
+    tmuxSessionName: "codex",
+    managementState: "managed",
     expiryMode: "manual",
+    expirySeconds: null,
+    createdAt: "2026-09-01T00:00:00.000Z",
+    remoteCreatedAt: null,
+    lastAttachedAt: null,
+    lastDetachedAt: null,
+    expiresAt: null,
+    lastObservedAt: null,
+    hibernatedAt: null,
     endedAt: null,
-  } as never;
-  it("does not kill a remote session whose marker diverges", async () => {
-    let killed = false;
-    const repository = {
-      findByIdForUser: async () => record,
-      markEnded: async () => record,
-    } as unknown as PersistentSessionRepository;
-    const gateway: PersistentSessionGateway = {
-      list: async () => [
-        {
-          name: "session",
-          attachedClients: 0,
-          marker: { id: "different", createdAt: "now", expiryMode: "manual" },
-        },
-      ],
-      create: async () => {},
-      mark: async () => {},
-      rename: async () => {},
-      kill: async () => {
-        killed = true;
-      },
-    };
-    const service = new PersistentSessionLifecycleService(
-      repository,
-      gateway,
-      async () => host,
+    endReason: null,
+  } as PersistentSessionRecord;
+}
+
+function fixtures(
+  remote: unknown[] = [],
+  overrides: { ended?: PersistentSessionRecord } = {},
+) {
+  const saved = overrides.ended ?? record();
+  const repository = {
+    findByIdForUser: vi.fn(async () => saved),
+    markEnded: vi.fn(async (_id: string, _userId: string, reason: string) => ({
+      ...saved,
+      endedAt: "2026-09-22T00:00:00.000Z",
+      endReason: reason,
+    })),
+  };
+  const gateway = {
+    list: vi.fn(async () => remote),
+    kill: vi.fn(async () => undefined),
+  };
+  const service = new PersistentSessionLifecycleService(
+    repository as never,
+    gateway as never,
+    async () => ({ id: 7 }) as never,
+  );
+  return { repository, gateway, service, saved };
+}
+
+describe("PersistentSessionLifecycleService kill", () => {
+  it("ends the local record with force when the host is unreachable", async () => {
+    const { repository, gateway, service } = fixtures();
+    gateway.list.mockRejectedValue(
+      new PersistentSessionError("PERSISTENT_SESSION_REMOTE_UNAVAILABLE"),
     );
-    await expect(service.kill("session", "owner")).rejects.toMatchObject({
-      code: "PERSISTENT_SESSION_MARKER_MISMATCH",
-    } satisfies Partial<PersistentSessionError>);
-    expect(killed).toBe(false);
+
+    await expect(
+      service.kill("session-id", "u", { force: true }),
+    ).resolves.toMatchObject({ endedAt: "2026-09-22T00:00:00.000Z" });
+    expect(repository.markEnded).toHaveBeenCalledWith(
+      "session-id",
+      "u",
+      "killed-unreachable",
+    );
   });
-  it("does not mark sessions missing when remote listing fails", async () => {
-    let ended = false;
-    const repository = {
-      listActiveByHostForUser: async () => [record],
-      markEnded: async () => {
-        ended = true;
-        return record;
-      },
-    } as unknown as PersistentSessionRepository;
-    const gateway: PersistentSessionGateway = {
-      list: async () => {
-        throw new PersistentSessionError(
-          "PERSISTENT_SESSION_REMOTE_UNAVAILABLE",
-        );
-      },
-      create: async () => {},
-      mark: async () => {},
-      rename: async () => {},
-      kill: async () => {},
-    };
-    const service = new PersistentSessionLifecycleService(
-      repository,
-      gateway,
-      async () => host,
+
+  it("still fails without force when the host is unreachable", async () => {
+    const { gateway, service } = fixtures();
+    gateway.list.mockRejectedValue(
+      new PersistentSessionError("PERSISTENT_SESSION_REMOTE_UNAVAILABLE"),
     );
-    await expect(service.refresh(1, "owner")).rejects.toMatchObject({
+    await expect(service.kill("session-id", "u")).rejects.toMatchObject({
       code: "PERSISTENT_SESSION_REMOTE_UNAVAILABLE",
     });
-    expect(ended).toBe(false);
   });
-  it("creates sessions that never expire", async () => {
-    const created: Array<Record<string, unknown>> = [];
-    const gatewayCreates: Array<Record<string, unknown>> = [];
-    const updates: Array<Record<string, unknown>> = [];
-    let createdId = "";
-    const repository = {
-      findActiveByHostAndTmux: async () => null,
-      create: async (input: Record<string, unknown>) => {
-        created.push(input);
-        return { ...input, expiresAt: null };
-      },
-      update: async (
-        _id: string,
-        _userId: string,
-        patch: Record<string, unknown>,
-      ) => {
-        updates.push(patch);
-        return patch;
-      },
-    } as unknown as PersistentSessionRepository;
-    const gateway = {
-      create: async (
-        _host: unknown,
-        input: Record<string, unknown>,
-      ): Promise<void> => {
-        gatewayCreates.push(input);
-        createdId = input.id as string;
-      },
-      list: async () => [
-        {
-          name: "session",
-          attachedClients: 0,
-          marker: { id: createdId, createdAt: "now", expiryMode: "manual" },
-        },
-      ],
-      mark: async () => {},
-      rename: async () => {},
-      kill: async () => {},
-    } as unknown as PersistentSessionGateway;
-    const service = new PersistentSessionLifecycleService(
-      repository,
-      gateway,
-      async () => host,
+
+  it("never remotely kills a mismatched marker, even with force", async () => {
+    const { repository, gateway, service } = fixtures([
+      { name: "codex", marker: { id: "someone-else" } },
+    ]);
+
+    await service.kill("session-id", "u", { force: true });
+
+    expect(gateway.kill).not.toHaveBeenCalled();
+    expect(repository.markEnded).toHaveBeenCalledWith(
+      "session-id",
+      "u",
+      "killed-unreachable",
     );
-    const record = await service.create("owner", {
-      hostId: 1,
-      displayName: "Session",
-      tmuxSessionName: "session",
+  });
+
+  it("fails without force on a marker mismatch", async () => {
+    const { service } = fixtures([
+      { name: "codex", marker: { id: "someone-else" } },
+    ]);
+    await expect(service.kill("session-id", "u")).rejects.toMatchObject({
+      code: "PERSISTENT_SESSION_MARKER_MISMATCH",
     });
-    expect(gatewayCreates[0]).toMatchObject({ expiryMode: "manual" });
-    expect(created[0]).toMatchObject({
-      expiryMode: "manual",
-      expirySeconds: null,
-    });
-    expect(record.expiresAt).toBeNull();
-    expect(updates).toHaveLength(0);
+  });
+
+  it("kills remotely and records a plain kill when markers match", async () => {
+    const { repository, gateway, service } = fixtures();
+    gateway.list
+      .mockResolvedValueOnce([{ name: "codex", marker: { id: "session-id" } }])
+      .mockResolvedValueOnce([]);
+
+    await service.kill("session-id", "u");
+
+    expect(gateway.kill).toHaveBeenCalledWith(
+      expect.objectContaining({ id: 7 }),
+      "codex",
+      "session-id",
+    );
+    expect(repository.markEnded).toHaveBeenCalledWith(
+      "session-id",
+      "u",
+      "killed",
+    );
   });
 });

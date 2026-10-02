@@ -11,6 +11,7 @@ export function applyPersistentSessionMigration(sqlite: Database.Database): void
         management_state TEXT NOT NULL DEFAULT 'managed', expiry_mode TEXT NOT NULL DEFAULT 'manual',
         expiry_seconds INTEGER, remote_created_at TEXT, created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
         last_attached_at TEXT, last_detached_at TEXT, expires_at TEXT, last_observed_at TEXT,
+        hibernated_at TEXT,
         ended_at TEXT, end_reason TEXT,
         FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
         FOREIGN KEY (host_id) REFERENCES ssh_data(id) ON DELETE CASCADE
@@ -42,6 +43,23 @@ export function applyPersistentSessionMigration(sqlite: Database.Database): void
     }
   } catch (error) {
     databaseLogger.warn("Failed to drop persistent_sessions.working_directory", {
+      operation: "schema_migration",
+      error,
+    });
+  }
+  // Hibernation bookkeeping: when a session's pane processes were frozen.
+  // Additive column for databases created before idle hibernation existed.
+  try {
+    const columns = sqlite
+      .prepare("PRAGMA table_info(persistent_sessions)")
+      .all() as Array<{ name: string }>;
+    if (!columns.some((column) => column.name === "hibernated_at")) {
+      sqlite.exec(
+        "ALTER TABLE persistent_sessions ADD COLUMN hibernated_at TEXT",
+      );
+    }
+  } catch (error) {
+    databaseLogger.warn("Failed to add persistent_sessions.hibernated_at", {
       operation: "schema_migration",
       error,
     });

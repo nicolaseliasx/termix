@@ -282,11 +282,49 @@ wake_on_lan, advanced_audit`. Flags are injected by Vite `define` as
   passed. The focused UI run passed 78 tests; one pre-existing Radix
   AlertDialog/JSDOM accessibility test remained failing and was reproduced on
   the baseline implementation.
-- Recovery point: `/home/admin/termix/backups/tserver-data-20260901-140719.tar.gz`
+- Recovery point: `/home/admin/termix/backups/termix-data-20260901-140719.tar.gz`
   (SHA-256 `f24f36f56867122a44112b3817d69b7cbdc7c46dd5d86157c71e008fbdfa5365`);
-  rollback image: `tserver:rollback-20260901-140719`.
+  rollback image: `termix:rollback-20260901-140719`.
 - Candidate `sha256:fdf8356fbe81e240a6d75d0873d29dbc2da3ba04398b8f822b17c2565ce1a019`
   passed isolated smoke tests and now runs healthy in production with the
-  original `tserver-data` volume. Local HTTPS, backend health, Sessions/Split
+  original `termix-data` volume. Local HTTPS, backend health, Sessions/Split
   assets and the unauthenticated `401` boundary passed; public DNS resolution
   was unavailable from the deployment host during validation.
+
+### 2026-10-02 — Idle-hibernation fixes: standby UX, force removal, freeze healing
+
+- Shipped the idle-hibernation follow-up (the 2026-09-22 deploy froze panes but
+  the UI never showed it and deletion was impossible for dead hosts):
+  - Sessions cards now show `standby · frozen Xh · up Yd` (with a snowflake)
+    instead of an ever-ticking `HH:MM:SS` runtime clock; ages are coarse
+    (m/h/d/w) so nothing counts seconds forever.
+  - `DELETE /api/v1/persistent-sessions/:id?force=true` plus a "Force remove"
+    action in the terminate dialog (appears after an unreachable-host failure):
+    ends the local record best-effort when the SSH host is gone or the marker
+    mismatched, never killing a remote session the record no longer owns.
+  - Reconciler heals stale hibernation: quick attach+detach between passes
+    cleared nothing before (row stayed "frozen" while panes ran, and was never
+    re-frozen). Recent activity now clears the flag; prolonged idle re-asserts
+    the SIGSTOP idempotently.
+  - Freeze/thaw sweep now signals every process group in each pane leader's
+    session, so interactive jobs (own pgids) stop too, not just the shell.
+  - `vitest.setup.ts` registers jest-dom matchers globally; previously only
+    tests lucky enough to share a worker with `TerminalToolbar.test.tsx` had
+    them (isolated runs failed with `Invalid Chai property`).
+- Validation on Node 24 (docker `node:24-bookworm`; host node is 20 and the
+  `/usr/local/bin/node` nvm symlink is dangling — see `codex.bak` links):
+  `tsc -b --force`, targeted ESLint, Prettier, and the affected suites
+  (lifecycle, reconciler, tmux-adapter, SessionsPanel, persistent-sessions-api,
+  attachment-manager, tab cache). Two failures are pre-existing and reproduce
+  on the pristine HEAD: the Radix AlertDialog/JSDOM dialog-name flake and the
+  attachment-manager lease-race test.
+- Recovery point: `/home/admin/termix/backups/termix-data-20261002-025154.tar.gz`
+  (SHA-256 `5f5c8c5796155458f0223ce6dab49f4ff6cadecd4e4ea3eba88d7bfe995f793a`,
+  verified with `tar -tzf`); rollback image: `termix:rollback-20261002-025154`
+  (`sha256:872cd2e156c2c4b014f4b7da1efb66f6ea2458d798636b7dce337eefacaa7abd`).
+- Candidate `sha256:6fe69965f82b88990d1cc04abbd39e50b82761b5adc166e1ed7b4ed35422e072`
+  passed the isolated smoke run (healthy, HTTPS 200, unauthenticated API 401,
+  new code present in the image, no fatals) and now runs in production with the
+  original `termix-data` volume. Production verification after promotion:
+  container healthy, loopback HTTPS 200, `401` auth boundary, public
+  `https://termix.ncls.cc` 200, clean startup logs.

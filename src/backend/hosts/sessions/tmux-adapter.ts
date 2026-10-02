@@ -39,11 +39,45 @@ export function buildPersistentTmuxCreateCommand(input: {
   return commands.join(" && ");
 }
 
+/**
+ * Hibernation freezes every live pane (SIGSTOP); the tmux server itself is
+ * never signalled, so listing and attaching keep working while the payload
+ * processes (shells, agents) consume no CPU. A pane leader is a session
+ * leader, so sweeping the leader's session id also reaches interactive jobs,
+ * which the shell places in their own process groups. Dead panes yield an
+ * empty pid and are skipped by the loop.
+ */
+function buildPersistentTmuxPaneSignalScript(
+  name: string,
+  signal: string,
+): string {
+  if (!validatePersistentSessionName(name))
+    throw new Error("PERSISTENT_SESSION_INVALID_NAME");
+  return (
+    `tmux list-panes -a -t ${target(name)} -F '#{?pane_dead,,#{pane_pid}}' 2>/dev/null | ` +
+    `while read -r pid; do [ -n "$pid" ] || continue; ` +
+    `pgid=$(ps -o pgid= -p "$pid" 2>/dev/null | tr -d ' '); ` +
+    `[ -n "$pgid" ] && kill -${signal} "-$pgid" 2>/dev/null; ` +
+    `for pg in $(ps -eo sid=,pgid= 2>/dev/null | awk -v s="$pid" '$1==s {print $2}' | sort -u); do ` +
+    `kill -${signal} "-$pg" 2>/dev/null; done; done; true`
+  );
+}
+
+export function buildPersistentTmuxFreezeCommand(name: string): string {
+  return buildPersistentTmuxPaneSignalScript(name, "STOP");
+}
+
+export function buildPersistentTmuxThawCommand(name: string): string {
+  return buildPersistentTmuxPaneSignalScript(name, "CONT");
+}
+
 export function buildPersistentTmuxAttachCommand(
   name: string,
   readOnly: boolean,
 ): string {
-  return `tmux -u attach-session ${readOnly ? "-r " : ""}-t ${target(name)}`;
+  // A frozen session is revived inline before the attach: SIGCONT on every
+  // pane process group is idempotent and silent when nothing is frozen.
+  return `${buildPersistentTmuxPaneSignalScript(name, "CONT")}; tmux -u attach-session ${readOnly ? "-r " : ""}-t ${target(name)}`;
 }
 
 export function buildPersistentTmuxHasSessionCommand(name: string): string {

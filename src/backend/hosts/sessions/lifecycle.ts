@@ -135,24 +135,50 @@ export class PersistentSessionLifecycleService {
       throw new PersistentSessionError("PERSISTENT_SESSION_NOT_FOUND");
     return saved;
   }
-  async kill(id: string, userId: string): Promise<PersistentSessionRecord> {
+  async kill(
+    id: string,
+    userId: string,
+    options: { force?: boolean } = {},
+  ): Promise<PersistentSessionRecord> {
     const record = await this.get(id, userId);
     if (record.endedAt) return record;
     const host = await this.host(record.hostId, userId);
-    const remote = (await this.gateway.list(host)).find(
-      (s) => s.name === record.tmuxSessionName,
-    );
-    if (remote) {
-      this.marker(remote, id);
-      await this.gateway.kill(host, record.tmuxSessionName, id);
-      if (
-        (await this.gateway.list(host)).some(
-          (s) => s.name === record.tmuxSessionName,
-        )
-      )
-        throw new PersistentSessionError("PERSISTENT_SESSION_REMOTE_FAILED");
+    // A force removal keeps the local record deletable even when the remote
+    // host is gone forever: the row must not outlive the machine it points
+    // at. Remote work is still attempted first, best effort.
+    let listed: RemotePersistentSession[] | null = null;
+    try {
+      listed = await this.gateway.list(host);
+    } catch (error) {
+      if (!options.force) throw error;
     }
-    return (await this.repository.markEnded(id, userId, "killed"))!;
+    const remote = listed?.find((s) => s.name === record.tmuxSessionName);
+    if (remote) {
+      if (remote.marker?.id === id) {
+        try {
+          await this.gateway.kill(host, record.tmuxSessionName, id);
+          if (
+            (await this.gateway.list(host)).some(
+              (s) => s.name === record.tmuxSessionName,
+            )
+          )
+            throw new PersistentSessionError(
+              "PERSISTENT_SESSION_REMOTE_FAILED",
+            );
+        } catch (error) {
+          if (!options.force) throw error;
+        }
+      } else if (!options.force) {
+        // The marker belongs to another record: never kill what we do not
+        // own. Force still ends the stale local row without a remote kill.
+        throw new PersistentSessionError("PERSISTENT_SESSION_MARKER_MISMATCH");
+      }
+    }
+    const reason =
+      listed && (!remote || remote.marker?.id === id)
+        ? "killed"
+        : "killed-unreachable";
+    return (await this.repository.markEnded(id, userId, reason))!;
   }
   async adopt(
     userId: string,

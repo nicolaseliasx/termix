@@ -5,6 +5,7 @@ import {
   Columns2,
   Loader2,
   Plus,
+  Snowflake,
   TerminalSquare,
   Trash2,
   WifiOff,
@@ -51,17 +52,22 @@ function isDefaultHost(host: Host): boolean {
   return host.name.trim().toLowerCase() === DEFAULT_HOST_NAME;
 }
 
-function formatRuntime(createdAt: string): string {
+// Coarse, non-ticking age: a per-second stopwatch next to every card reads as
+// a countdown nobody asked for. Minutes are shown until an hour, then hours,
+// then days — the panel polls every 30s, which is plenty for this precision.
+function formatAge(iso: string): string {
   const seconds = Math.max(
     0,
-    Math.floor((Date.now() - new Date(createdAt).getTime()) / 1000),
+    Math.floor((Date.now() - new Date(iso).getTime()) / 1000),
   );
-  const hours = Math.floor(seconds / 3600);
-  const minutes = Math.floor((seconds % 3600) / 60);
-  const rest = seconds % 60;
-  return [hours, minutes, rest]
-    .map((part) => String(part).padStart(2, "0"))
-    .join(":");
+  if (seconds < 60) return "now";
+  const minutes = Math.floor(seconds / 60);
+  if (minutes < 60) return `${minutes}m`;
+  const hours = Math.floor(minutes / 60);
+  if (hours < 24) return `${hours}h`;
+  const days = Math.floor(hours / 24);
+  if (days < 14) return `${days}d ${hours % 24}h`;
+  return `${Math.floor(days / 7)}w`;
 }
 function errorText(error: unknown): string {
   const message = error instanceof Error ? error.message : "Request failed";
@@ -69,6 +75,10 @@ function errorText(error: unknown): string {
     return "This session is already in use. Refresh and try again.";
   if (message.includes("OFFLINE")) return "The host is offline.";
   return message;
+}
+function isRemoteUnavailable(error: unknown): boolean {
+  const message = error instanceof Error ? error.message : "";
+  return /unavailable/i.test(message) || /SSH timeout/i.test(message);
 }
 export function SessionsPanel({
   onAttach,
@@ -91,6 +101,10 @@ export function SessionsPanel({
   const [sessionToTerminate, setSessionToTerminate] =
     useState<PersistentSession | null>(null);
   const [terminating, setTerminating] = useState(false);
+  const [terminateError, setTerminateError] = useState<{
+    text: string;
+    force: boolean;
+  } | null>(null);
   const [hostId, setHostId] = useState("");
   const [name, setName] = useState("");
   const serverStatus = useOptionalServerStatus();
@@ -202,18 +216,25 @@ export function SessionsPanel({
       setCreating(false);
     }
   }
-  async function terminate() {
+  async function terminate(force = false) {
     const session = sessionToTerminate;
     if (!session) return;
     setTerminating(true);
     try {
-      await killPersistentSession(session.id);
+      await killPersistentSession(session.id, { force });
       onTerminate?.(session);
       await refresh();
-      toast.success("Session terminated");
+      toast.success(force ? "Session removed locally" : "Session terminated");
       setSessionToTerminate(null);
+      setTerminateError(null);
     } catch (reason) {
-      toast.error(errorText(reason));
+      // Keep the dialog open: the failure is usually a dead host, and the
+      // force path is the way out for records that can never reach their
+      // remote again.
+      setTerminateError({
+        text: errorText(reason),
+        force: isRemoteUnavailable(reason),
+      });
     } finally {
       setTerminating(false);
     }
@@ -347,7 +368,10 @@ export function SessionsPanel({
                           size="icon"
                           variant="ghost"
                           title="Terminate remote session"
-                          onClick={() => setSessionToTerminate(session)}
+                          onClick={() => {
+                            setTerminateError(null);
+                            setSessionToTerminate(session);
+                          }}
                           disabled={ended}
                         >
                           <Trash2 className="size-4" />
@@ -359,15 +383,23 @@ export function SessionsPanel({
                       <p className="truncate text-xs text-muted-foreground">
                         {host?.name ?? `Host #${session.hostId}`}
                       </p>
-                      <p className="mt-1 text-xs text-muted-foreground">
-                        {ended
-                          ? session.endReason || "terminated"
-                          : status === "online"
-                            ? "running"
-                            : formatHostStatus(status) +
-                              " · not available"}{" "}
-                        · {formatRuntime(session.createdAt)}
-                      </p>
+                      <div className="mt-1 flex items-center gap-1 text-xs text-muted-foreground">
+                        {session.hibernatedAt && !ended && (
+                          <Snowflake
+                            className="size-3 shrink-0 text-sky-400"
+                            aria-label="Session is in standby"
+                          />
+                        )}
+                        <p className="truncate">
+                          {ended
+                            ? session.endReason || "terminated"
+                            : session.hibernatedAt
+                              ? `standby · frozen ${formatAge(session.hibernatedAt)} · up ${formatAge(session.createdAt)}`
+                              : status === "online"
+                                ? `running · up ${formatAge(session.createdAt)}`
+                                : formatHostStatus(status) + " · not available"}
+                        </p>
+                      </div>
                       <div className="mt-3 flex flex-wrap gap-2">
                         <Button
                           size="sm"
@@ -408,7 +440,10 @@ export function SessionsPanel({
       <AlertDialog
         open={sessionToTerminate !== null}
         onOpenChange={(open) => {
-          if (!open && !terminating) setSessionToTerminate(null);
+          if (!open && !terminating) {
+            setSessionToTerminate(null);
+            setTerminateError(null);
+          }
         }}
       >
         <AlertDialogContent className="rounded-none">
@@ -420,14 +455,43 @@ export function SessionsPanel({
                 : ""}
             </AlertDialogDescription>
           </AlertDialogHeader>
+          {terminateError && (
+            <div
+              role="alert"
+              className="flex gap-2 rounded border border-destructive/50 p-2 text-xs"
+            >
+              <AlertCircle className="size-4 shrink-0" />
+              <div>
+                <p>{terminateError.text}</p>
+                {terminateError.force && (
+                  <p className="mt-1 text-muted-foreground">
+                    The host cannot be reached. Force remove ends the local
+                    record without touching the remote tmux session.
+                  </p>
+                )}
+              </div>
+            </div>
+          )}
           <AlertDialogFooter>
             <AlertDialogCancel disabled={terminating}>Cancel</AlertDialogCancel>
+            {terminateError?.force && (
+              <AlertDialogAction
+                className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+                disabled={terminating}
+                onClick={(event) => {
+                  event.preventDefault();
+                  void terminate(true);
+                }}
+              >
+                {terminating ? "Removing…" : "Force remove"}
+              </AlertDialogAction>
+            )}
             <AlertDialogAction
               className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
               disabled={terminating}
               onClick={(event) => {
                 event.preventDefault();
-                void terminate();
+                void terminate(false);
               }}
             >
               {terminating ? "Terminating…" : "Terminate"}

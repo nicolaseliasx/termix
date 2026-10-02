@@ -54,6 +54,7 @@ function persistentSession(
     lastDetachedAt: null,
     expiresAt: null,
     lastObservedAt: null,
+    hibernatedAt: null,
     endedAt: null,
     endReason: null,
     ...overrides,
@@ -206,6 +207,56 @@ describe("SessionsPanel host availability", () => {
     ).toBeInTheDocument();
     await user.click(screen.getByRole("button", { name: "Terminate" }));
 
+    await waitFor(() => expect(onTerminate).toHaveBeenCalledWith(session));
+  });
+
+  it("marks hibernated sessions as standby instead of a running clock", async () => {
+    const session = persistentSession({
+      hibernatedAt: "2026-08-31T09:00:00.000Z",
+    });
+    mocks.listPersistentSessions.mockResolvedValue({
+      data: [session],
+      total: 1,
+    });
+    useStatuses([[1, "online"]]);
+
+    render(<SessionsPanel onAttach={vi.fn()} />);
+
+    expect(await screen.findByText(/standby · frozen/)).toBeInTheDocument();
+    expect(screen.queryByText(/running · up/)).toBeNull();
+  });
+
+  it("offers force removal when the terminate fails on an unreachable host", async () => {
+    const user = userEvent.setup();
+    const onTerminate = vi.fn();
+    const session = persistentSession();
+    mocks.listPersistentSessions.mockResolvedValue({
+      data: [session],
+      total: 1,
+    });
+    mocks.killPersistentSession
+      .mockRejectedValueOnce(new Error("Remote host is unavailable"))
+      .mockResolvedValueOnce({
+        ...session,
+        endedAt: "2026-08-31T12:01:00.000Z",
+        endReason: "killed-unreachable",
+      });
+    useStatuses([[1, "online"]]);
+
+    render(<SessionsPanel onAttach={vi.fn()} onTerminate={onTerminate} />);
+
+    await user.click(await screen.findByTitle("Terminate remote session"));
+    await user.click(await screen.findByRole("button", { name: "Terminate" }));
+
+    const force = await screen.findByRole("button", { name: "Force remove" });
+    expect(screen.getByText("Remote host is unavailable")).toBeInTheDocument();
+    await user.click(force);
+
+    await waitFor(() =>
+      expect(mocks.killPersistentSession).toHaveBeenCalledWith("session-1", {
+        force: true,
+      }),
+    );
     await waitFor(() => expect(onTerminate).toHaveBeenCalledWith(session));
   });
 

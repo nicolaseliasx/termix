@@ -131,6 +131,11 @@ router.delete(
         data: await service().kill(
           param(req.params.id),
           (req as AuthenticatedRequest).userId,
+          {
+            // Force is the explicit escape hatch for hosts that are gone or
+            // unreachable: the local record is ended even without remote proof.
+            force: req.query.force === "true",
+          },
         ),
       });
     } catch (error) {

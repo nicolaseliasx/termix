@@ -472,6 +472,9 @@ export function createCurrentPersistentSessionRepository(): PersistentSessionRep
   return new PersistentSessionRepository(
     createCurrentRepositoryContext(),
     createCurrentRepositoryWriteHook("persistent_session_repository_write"),
+    createCurrentRepositoryLazyWriteHook(
+      "persistent_session_repository_telemetry_write",
+    ),
   );
 }
 

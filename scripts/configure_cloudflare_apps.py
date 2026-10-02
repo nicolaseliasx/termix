@@ -25,13 +25,13 @@ PRIVATE_APPS = {
 }
 
 PUBLIC_APPS = {
-    "tserver.ncls.cc",
+    "termix.ncls.cc",
     "mercado.ncls.cc",
 }
 
 INGRESS = [
     {
-        "hostname": "tserver.ncls.cc",
+        "hostname": "termix.ncls.cc",
         "service": "https://127.0.0.1:8443",
         "originRequest": {"noTLSVerify": True},
     },
@@ -210,7 +210,7 @@ def main() -> int:
     print("updated tunnel ingress")
 
     for hostname in [
-        "tserver.ncls.cc",
+        "termix.ncls.cc",
         "mercado.ncls.cc",
         "gym.ncls.cc",
         "licitacoes.ncls.cc",
