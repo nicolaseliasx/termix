@@ -153,6 +153,7 @@ export class PersistentSessionLifecycleService {
       if (!options.force) throw error;
     }
     const remote = listed?.find((s) => s.name === record.tmuxSessionName);
+    let remoteKilled = false;
     if (remote) {
       if (remote.marker?.id === id) {
         try {
@@ -165,8 +166,25 @@ export class PersistentSessionLifecycleService {
             throw new PersistentSessionError(
               "PERSISTENT_SESSION_REMOTE_FAILED",
             );
+          remoteKilled = true;
         } catch (error) {
           if (!options.force) throw error;
+        }
+      } else if (!remote.marker) {
+        // A tmux server restart recreates sessions without their termix
+        // markers, so every card eventually hits this branch. Killing by
+        // name is safe here — no marker means no other record owns it —
+        // and required: leaving the session alive would let the reconciler
+        // re-adopt it and resurrect the card the user just removed.
+        if (!options.force)
+          throw new PersistentSessionError(
+            "PERSISTENT_SESSION_MARKER_MISMATCH",
+          );
+        try {
+          await this.gateway.killUnguarded(host, record.tmuxSessionName);
+          remoteKilled = true;
+        } catch {
+          // Host flaked mid-force: still end the local record below.
         }
       } else if (!options.force) {
         // The marker belongs to another record: never kill what we do not
@@ -175,7 +193,7 @@ export class PersistentSessionLifecycleService {
       }
     }
     const reason =
-      listed && (!remote || remote.marker?.id === id)
+      remoteKilled || (listed !== null && !remote)
         ? "killed"
         : "killed-unreachable";
     return (await this.repository.markEnded(id, userId, reason))!;

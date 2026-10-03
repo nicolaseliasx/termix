@@ -328,3 +328,47 @@ wake_on_lan, advanced_audit`. Flags are injected by Vite `define` as
   original `termix-data` volume. Production verification after promotion:
   container healthy, loopback HTTPS 200, `401` auth boundary, public
   `https://termix.ncls.cc` 200, clean startup logs.
+
+### 2026-10-02 — Upstream 2.8.0 integration, conflict fix and performance
+
+- Production upgraded from the fork baseline to upstream 2.8.0 (`fef8a5f`)
+  with the persistent-session module, split terminal, custom build flags and
+  local fork changes retained. Integration worktree: `/home/admin/termix-upgrade-28`
+  (branch `merge-28`; merge intentionally uncommitted pending review).
+- Fixed `409 Conflict` on markerless tmux sessions: after guarded termination
+  fails, Force remove is offered for all errors; for a remote session with no
+  owner marker it kills by name and ends the local row. A session with a
+  foreign marker is never killed remotely. This prevents a removed card from
+  being immediately re-adopted by the reconciler.
+- Both `/favicon.svg` and `/favicon.ico` now contain the current Termix logo,
+  with a cache-busting link in `index.html` for browser tabs and bookmarks.
+  The public unversioned `/favicon.svg` is still cached by Cloudflare for up to
+  30 days; the versioned link and public `/favicon.ico` serve the new logo.
+- Root filesystem was 100% full (290 MB available). Reclaimed ~59 GB of
+  disposable Docker build cache, leaving ~47 GB free before rebuilding.
+  Termix was using ~255–376 MB RAM and ~1–2% CPU; one local tmux session was
+  visible. The disk pressure was the strongest measured contributor to the
+  progressive slowdown. Added json-file log rotation (10 MB × 3) to the
+  Termix compose service so verbose SSH logs cannot grow indefinitely.
+- MySQL and PostgreSQL upstream migrations 0015+ were renumbered after the
+  fork migration 0015, with monotonically increasing journal timestamps and
+  persistent session table metadata carried into snapshots. SQLite uses the
+  separate idempotent persistent session migration. Its migration was tested
+  against an isolated copy of the encrypted production volume.
+- Validation: TypeScript build, generated dialect schema check, targeted ESLint,
+  Drizzle migration checks for MySQL and PostgreSQL,
+  42 passing targeted tests (the two known baseline failures reproduced),
+  Docker build, and isolated candidate startup with a copy of production data
+  on `--network none` (healthy, schema migration completed, root 200, session
+  API unauthenticated 401). Production after promotion: healthy, public 200,
+  API 401, new favicon hash, clean migration logs.
+- Pre-upgrade backup: `/home/admin/termix/backups/termix-data-20261002-221223.tar.gz`
+  SHA-256 `53a979841469748cd70864aa2bfa8e9392345ca1801ea2d02a5ec8a16bf8d1ea`.
+  Candidate image `sha256:2d7754fad9d3904c762a7734778b0726b2fd574a94caeb12e32e3ed9dc7f1373`.
+  Rollback image: `termix:rollback-20261002-221223`; restoring the backup
+  volume is required before rollback because 2.8.0 applies DB migrations.
+- Upstream 2.9.0 (`307667c`) was assessed separately in
+  `/home/admin/termix-upgrade-29-wip`: it moves SSH terminal and other features into
+  plugins. A direct merge leaves about 100 TypeScript errors after building the
+  new SDK, including the persistent session module and terminal UI. It has not
+  been deployed; porting the module to the new plugin architecture remains.

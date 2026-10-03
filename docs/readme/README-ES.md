@@ -111,7 +111,7 @@ Guarda y organiza hosts con etiquetas y carpetas anidadas que puedes nombrar y c
 <td width="50%" valign="top">
 
 **Métricas de host:**
-CPU, memoria, disco, red, temperatura, tiempo encendido, procesos, puertos, inicios de sesión e información del sistema en la mayoría de servidores Linux, con gráficas de histórico. Las tarjetas de gestión te dejan manejar servicios, tareas cron, paquetes, usuarios, reglas del cortafuegos, WireGuard, Tailscale, certificados SSL, registros y comprobaciones de estado sin salir de Termix.
+CPU, memoria, disco, red, temperatura, GPU NVIDIA, tiempo encendido, procesos, puertos, inicios de sesión e información del sistema en la mayoría de servidores Linux, con gráficas de histórico. Las tarjetas de gestión te dejan manejar servicios, tareas cron, paquetes, usuarios, reglas del cortafuegos, WireGuard, Tailscale, certificados SSL, registros y comprobaciones de estado sin salir de Termix.
 
 </td>
 <td width="50%" valign="top">
@@ -214,20 +214,6 @@ Guarda un conjunto de pestañas con su distribución dividida y reábrelo entero
 </td>
 <td width="50%" valign="top">
 
-**Configuración guiada:**
-Una configuración corta te lleva por elegir un preajuste de interfaz, tu tema, las funciones que quieres y tu primer host. El modo sencillo esconde lo que no usas, y puedes repetir la configuración o cambiar de preajuste cuando quieras.
-
-</td>
-</tr>
-<tr>
-<td width="50%" valign="top">
-
-**Escritorio independiente y sincronización:**
-La aplicación de escritorio funciona sola, con su backend y su base de datos locales, sin necesidad de servidor. También puedes conectarla a un servidor Termix para sincronizar en ambos sentidos hosts, credenciales, fragmentos y más, y decidir si las conexiones salen de tu equipo o pasan por el servidor.
-
-</td>
-<td width="50%" valign="top">
-
 **Línea de comandos:**
 Un CLI `termix` para tu shell y tus scripts. Abre terminales, ejecuta un comando en un host o en una flota entera, mueve archivos por SFTP y gestiona hosts, fragmentos y credenciales. Instálalo con `npm install -g @termix-cli/cli` o coge un binario independiente. Consulta la [documentación del CLI](https://docs.termix.site/cli).
 
@@ -237,7 +223,7 @@ Un CLI `termix` para tu shell y tus scripts. Abre terminales, ejecuta un comando
 <td width="50%" valign="top">
 
 **Seguridad:**
-Las contraseñas, las claves y otros secretos se cifran por usuario, y los propios archivos de la base de datos se pueden cifrar en disco. Mira la [documentación](https://docs.termix.site/security) para saber cómo funciona.
+Las contraseñas, las claves y otros secretos se cifran por usuario, y los propios archivos de la base de datos se pueden cifrar en disco. Mira la [documentación](https://docs.termix.site/features/authentication/security/) para saber cómo funciona.
 
 </td>
 <td width="50%" valign="top">
@@ -267,8 +253,13 @@ Unos 30 idiomas incluidos, gestionados a través de [Crowdin](https://docs.termi
 - **Atajos de teclado** - Moverte entre pestañas, cerrarlas y más, todo reasignable
 - **Wake-on-LAN** - Enciende una máquina desde Termix o desde un paso de automatización
 - **Proxy de confianza** - Deja que un proxy inverso gestione el acceso y pase al usuario
-- **SSH muy completo** - Hosts de salto, Warpgate, peticiones TOTP, SOCKS5, verificación de claves de host, autorrelleno de contraseñas, [OPKSSH](https://github.com/openpubkey/opkssh), tmux, port knocking, registro del terminal, reenvío de agente, agente SSH de Bitwarden, firma SSH con HashiCorp Vault y más
+- **Marca blanca** - Los administradores pueden personalizar la instancia con su propio nombre, logo y colores
+- **Puntos de acceso web** - Abre la propia interfaz web de un host, como la página de administración de un router, integrada dentro de Termix en lugar de en una pestaña aparte
+- **Salas de colaboración** - Salas persistentes donde un grupo salta entre sesiones junto, con un escenario para presentador e invitaciones
+- **SSH muy completo** - Hosts de salto, Warpgate, peticiones TOTP, SOCKS5, verificación de claves de host, autorrelleno de contraseñas, [OPKSSH](https://github.com/openpubkey/opkssh), tmux, port knocking, registro del terminal, reenvío de agente, agente SSH de Bitwarden, firma SSH con HashiCorp Vault, Step CA, 1Password Connect y más
 - **Termix ID** - Una versión integrada de sshid.io. Reserva un identificador, publica tus claves públicas en una URL de resolución y emite certificados SSH desde la CA integrada
+- **Autosugerencias del historial de comandos** - Sugerencias en línea en el terminal mientras escribes, basadas en tu historial de comandos
+- **Escritorio independiente y sincronización** - La aplicación de escritorio funciona sola, con su propio backend y base de datos locales, y puede sincronizarse opcionalmente con un servidor Termix
 
 </details>
 
@@ -312,6 +303,10 @@ Unos 30 idiomas incluidos, gestionados a través de [Crowdin](https://docs.termi
 ## Instalación
 
 Visita la [documentación de Termix](https://docs.termix.site/install) para ver las instrucciones completas de instalación en todas las plataformas.
+
+¿Vas a desplegar en Kubernetes? El chart de Helm está en `charts/termix`, y las instrucciones
+de configuración para Ingress, Traefik, Argo CD, GitHub Actions y GitLab CI están en
+[docs.termix.site/install/server/kubernetes](https://docs.termix.site/install/server/kubernetes).
 
 Ejemplo de archivo Docker Compose (puedes quitar `guacd` y la red si no piensas usar el escritorio remoto):
 
@@ -390,42 +385,51 @@ Termix es gratuito y de código abierto, sin suscripciones ni planes de pago. Si
 
 ¿Te interesa un espacio de pago para apoyar el desarrollo? Escribe a [mail@termix.site](mailto:mail@termix.site).
 
+<!-- SPONSORS:START -->
+
 <div align="center">
 
 <br />
 
 <a href="https://www.digitalocean.com/">
-  <img src="https://opensource.nyc3.cdn.digitaloceanspaces.com/attribution/assets/SVG/DO_Logo_horizontal_blue.svg" height="40" alt="DigitalOcean" />
+  <img src="https://termix.site/img/sponsors/digitalocean.svg" height="40" alt="DigitalOcean" />
 </a>
 &nbsp;&nbsp;&nbsp;
 <a href="https://crowdin.com/">
-  <img src="https://support.crowdin.com/assets/logos/core-logo/svg/crowdin-core-logo-cDark.svg" height="40" alt="Crowdin" />
+  <img src="https://termix.site/img/sponsors/crowdin.svg" height="40" alt="Crowdin" />
 </a>
 &nbsp;&nbsp;&nbsp;
 <a href="https://www.blacksmith.sh/">
-  <img src="https://cdn.prod.website-files.com/681bfb0c9a4601bc6e288ec4/683ca9e2c5186757092611b8_e8cb22127df4da0811c4120a523722d2_logo-backsmith-wordmark-light.svg" height="40" alt="Blacksmith" />
+  <img src="https://termix.site/img/sponsors/blacksmith.svg" height="40" alt="Blacksmith" />
 </a>
 &nbsp;&nbsp;&nbsp;
 <a href="https://www.cloudflare.com/">
-  <img src="https://sirv.sirv.com/website/screenshots/cloudflare/cloudflare-logo.png?w=300" height="40" alt="Cloudflare" />
+  <img src="https://termix.site/img/sponsors/cloudflare.png" height="40" alt="Cloudflare" />
 </a>
 &nbsp;&nbsp;&nbsp;
 <a href="https://akamai.com/">
-  <img src="https://upload.wikimedia.org/wikipedia/commons/8/8b/Akamai_logo.svg" height="40" alt="Akamai" />
+  <img src="https://termix.site/img/sponsors/akamai.svg" height="40" alt="Akamai" />
 </a>
 &nbsp;&nbsp;&nbsp;
 <a href="https://aws.amazon.com/">
-  <img src="https://upload.wikimedia.org/wikipedia/commons/thumb/9/93/Amazon_Web_Services_Logo.svg/960px-Amazon_Web_Services_Logo.svg.png" height="40" alt="AWS" />
+  <img src="https://termix.site/img/sponsors/aws.png" height="40" alt="AWS" />
 </a>
 &nbsp;&nbsp;&nbsp;
 <a href="https://rackgenius.com/">
-  <img src="https://rackgenius.com/rackgenius-logo.png" height="40" alt="Rack Genius" />
+  <img src="https://termix.site/img/sponsors/rackgenius.png" height="40" alt="Rack Genius" />
 </a>
 &nbsp;&nbsp;&nbsp;
 <a href="https://ginernet.com/">
-  <img src="https://ginernet.com/img/logo-web.png" height="40" alt="Ginernet" />
+  <img src="https://termix.site/img/sponsors/ginernet.png" height="40" alt="Ginernet" />
 </a>
+&nbsp;&nbsp;&nbsp;
+<a href="https://www.hetzner.com/?mtm_campaign=termix&mtm_medium=referral&mtm_content=sponsoring_link">
+  <img src="https://termix.site/img/sponsors/hetzner.png" height="40" alt="Hetzner" />
+</a>
+
 </div>
+
+<!-- SPONSORS:END -->
 
 <br />
 

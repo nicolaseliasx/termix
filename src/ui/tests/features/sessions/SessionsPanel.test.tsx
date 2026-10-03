@@ -260,6 +260,40 @@ describe("SessionsPanel host availability", () => {
     await waitFor(() => expect(onTerminate).toHaveBeenCalledWith(session));
   });
 
+  it("offers force removal when a 409 conflict blocks the terminate", async () => {
+    // A tmux server restart wipes every session marker; the guarded
+    // terminate then fails with a generic 409 and force is the only way
+    // out. The button must appear for conflicts, not just dead hosts.
+    const user = userEvent.setup();
+    const session = persistentSession();
+    mocks.listPersistentSessions.mockResolvedValue({
+      data: [session],
+      total: 1,
+    });
+    mocks.killPersistentSession
+      .mockRejectedValueOnce(
+        new Error("Conflict. The resource already exists or is in use."),
+      )
+      .mockResolvedValueOnce({
+        ...session,
+        endedAt: "2026-08-31T12:01:00.000Z",
+        endReason: "killed",
+      });
+    useStatuses([[1, "online"]]);
+
+    render(<SessionsPanel onAttach={vi.fn()} />);
+
+    await user.click(await screen.findByTitle("Terminate remote session"));
+    await user.click(await screen.findByRole("button", { name: "Terminate" }));
+
+    expect(
+      await screen.findByRole("button", { name: "Force remove" }),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByText("Conflict. The resource already exists or is in use."),
+    ).toBeInTheDocument();
+  });
+
   it("attaches in split view when the split button is clicked", async () => {
     const user = userEvent.setup();
     const onAttach = vi.fn();

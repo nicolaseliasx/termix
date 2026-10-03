@@ -1,4 +1,5 @@
 import {
+  ArrowLeftRight,
   Boxes,
   Braces,
   Clock,
@@ -19,6 +20,7 @@ import {
   User,
   Workflow,
   Zap,
+  Presentation,
   type LucideIcon,
 } from "lucide-react";
 import { isElectron } from "@/lib/electron";
@@ -78,6 +80,13 @@ export const RAIL_ITEMS: RailItemDef[] = [
     separatorAfter: true,
   },
   {
+    id: "port-forwarding",
+    icon: Network,
+    labelKey: "nav.portForwarding",
+    electronOnly: true,
+    separatorAfter: true,
+  },
+  {
     id: "termix-id",
     icon: Fingerprint,
     labelKey: "nav.termixId",
@@ -90,6 +99,12 @@ export const RAIL_ITEMS: RailItemDef[] = [
     labelKey: "nav.connections",
     separatorAfter: true,
     rightDockable: true,
+  },
+  {
+    id: "collab",
+    icon: Presentation,
+    labelKey: "nav.collab",
+    separatorAfter: true,
   },
   {
     id: "quick-connect",
@@ -107,6 +122,12 @@ export const RAIL_ITEMS: RailItemDef[] = [
     mobilePrimary: true,
     promotable: true,
     rightDockable: true,
+  },
+  {
+    id: "sftp",
+    icon: ArrowLeftRight,
+    labelKey: "nav.sftp",
+    separatorAfter: true,
   },
   {
     id: "snippets",
@@ -187,9 +208,25 @@ export const RAIL_ITEMS: RailItemDef[] = [
 ];
 
 /**
+ * Runtime-registered rail items, for a future plugin loader to add
+ * destinations that don't exist at build time. Keyed by id so a plugin can
+ * cleanly unregister its own entries without touching anyone else's.
+ */
+const registeredRailItems = new Map<string, RailItemDef>();
+
+export function registerRailItem(def: RailItemDef): void {
+  registeredRailItems.set(def.id, def);
+}
+
+export function unregisterRailItem(id: string): void {
+  registeredRailItems.delete(id);
+}
+
+/**
  * Rail items available in the current build. Electron-only destinations are
  * dropped in the browser build so they never reach the rail, the mobile bar,
- * or the visibility toggles.
+ * or the visibility toggles. Runtime-registered items are appended after the
+ * built-in list.
  */
 /** Optional-feature gating for rail destinations (build-time flags). */
 const RAIL_ITEM_FEATURES: Record<string, FeatureId> = {
@@ -253,8 +290,8 @@ const LABEL_KEYS: Record<string, string> = Object.fromEntries(
   ]),
 );
 
-/** Translated label for any rail destination. */
+/** Translated label for any rail destination, including registered ones. */
 export function railItemLabel(id: string, t: (key: string) => string): string {
-  const key = LABEL_KEYS[id];
+  const key = LABEL_KEYS[id] ?? registeredRailItems.get(id)?.labelKey;
   return key ? t(key) : id;
 }

@@ -22,6 +22,8 @@ export type RailView =
   | "sessions"
   | "hosts"
   | "credentials"
+  | "port-forwarding"
+  | "sftp"
   | "termix-id"
   | "quick-connect"
   | "serial"
@@ -34,7 +36,8 @@ export type RailView =
   | "automations"
   | "ai"
   | "fleets"
-  | "workspaces";
+  | "workspaces"
+  | "collab";
 
 export type HideableRailView =
   | Exclude<RailView, "user-profile" | "admin-settings">
@@ -133,7 +136,7 @@ export function AppRail({
   onRailClick: (view: RailView) => void;
   onOpenTab?: (type: TabType) => void;
   onOpenInRightDock?: (view: RailView) => void;
-  onLogout: () => void;
+  onLogout: (options?: { manual?: boolean }) => void;
 }) {
   const { t } = useTranslation();
   const [hovered, setHovered] = useState(false);
@@ -629,8 +632,10 @@ export function AppRail({
           ))}
         <div className="mx-2 my-1 border-t border-border" />
         <button
-          onClick={onLogout}
+          onClick={() => onLogout({ manual: true })}
           style={btnStyle}
+          title={t("common.logout")}
+          aria-label={t("common.logout")}
           className={`${btnBase} text-muted-foreground hover:text-destructive hover:bg-destructive/10`}
         >
           <span
@@ -649,6 +654,9 @@ export function AppRail({
 
       <div className="shrink-0 border-t border-border">
         <button
+          onClick={() => onRailClick("user-profile")}
+          title={t("nav.userProfile")}
+          aria-label={t("nav.userProfile")}
           className="flex items-center gap-2.5 w-full h-10 text-muted-foreground hover:text-foreground hover:bg-muted/60 transition-colors"
           style={{ padding: "0 8px" }}
         >

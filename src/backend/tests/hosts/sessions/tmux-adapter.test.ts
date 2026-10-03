@@ -4,6 +4,7 @@ import {
   buildPersistentTmuxCreateCommand,
   buildPersistentTmuxFreezeCommand,
   buildPersistentTmuxHasSessionCommand,
+  buildPersistentTmuxKillByNameCommand,
   buildPersistentTmuxKillCommand,
   buildPersistentTmuxListCommand,
   buildPersistentTmuxThawCommand,
@@ -58,6 +59,12 @@ describe("persistent tmux adapter", () => {
     expect(command).toContain("-t 'safe-session'");
     expect(command).not.toContain("-t '=safe-session'");
     expect(command).toContain("! tmux has-session");
+  });
+  it("kills by name only in the marker-free fallback and confirms it", () => {
+    const command = buildPersistentTmuxKillByNameCommand(input.name);
+    expect(command).toContain("tmux kill-session -t 'safe-session'");
+    expect(command).toContain("! tmux has-session -t 'safe-session'");
+    expect(command).not.toContain("@termix_session_id");
   });
   it("lists zero sessions without treating an idle tmux server as offline", () => {
     const command = buildPersistentTmuxListCommand();

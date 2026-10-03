@@ -113,6 +113,69 @@
       "when": 1790094294957,
       "tag": "0015_silky_amphibian",
       "breakpoints": true
+    },
+    {
+      "idx": 16,
+      "version": "5",
+      "when": 1790094294958,
+      "tag": "0016_red_cobalt_man",
+      "breakpoints": true
+    },
+    {
+      "idx": 17,
+      "version": "5",
+      "when": 1790094294959,
+      "tag": "0017_unusual_tyrannus",
+      "breakpoints": true
+    },
+    {
+      "idx": 18,
+      "version": "5",
+      "when": 1790094294960,
+      "tag": "0018_spicy_proteus",
+      "breakpoints": true
+    },
+    {
+      "idx": 19,
+      "version": "5",
+      "when": 1790094294961,
+      "tag": "0019_fancy_barracuda",
+      "breakpoints": true
+    },
+    {
+      "idx": 20,
+      "version": "5",
+      "when": 1790094294962,
+      "tag": "0020_certain_archangel",
+      "breakpoints": true
+    },
+    {
+      "idx": 21,
+      "version": "5",
+      "when": 1790094294963,
+      "tag": "0021_wise_green_goblin",
+      "breakpoints": true
+    },
+    {
+      "idx": 22,
+      "version": "5",
+      "when": 1790094294964,
+      "tag": "0022_thick_galactus",
+      "breakpoints": true
+    },
+    {
+      "idx": 23,
+      "version": "5",
+      "when": 1790094294965,
+      "tag": "0023_secret_blacklash",
+      "breakpoints": true
+    },
+    {
+      "idx": 24,
+      "version": "5",
+      "when": 1790094294966,
+      "tag": "0024_even_beast",
+      "breakpoints": true
     }
   ]
 }

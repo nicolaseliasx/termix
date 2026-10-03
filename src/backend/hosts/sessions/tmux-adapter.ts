@@ -91,6 +91,17 @@ export function buildPersistentTmuxKillCommand(
   return `test "$(tmux show-option -t ${target(name)} -qv @termix_session_id)" = ${shellQuote(id)} && tmux kill-session -t ${target(name)} && ! tmux has-session -t ${target(name)}`;
 }
 
+/**
+ * Marker-free fallback: a tmux server restart can recreate sessions without
+ * their termix markers, leaving the session name as the only identity. The
+ * caller must only use this when no other record can own the session.
+ */
+export function buildPersistentTmuxKillByNameCommand(name: string): string {
+  if (!validatePersistentSessionName(name))
+    throw new Error("PERSISTENT_SESSION_INVALID_NAME");
+  return `tmux kill-session -t ${target(name)} && ! tmux has-session -t ${target(name)}`;
+}
+
 export function buildPersistentTmuxMarkCommand(input: {
   name: string;
   id: string;

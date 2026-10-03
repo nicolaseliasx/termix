@@ -8,6 +8,11 @@ services:
       dockerfile: docker/Dockerfile
     container_name: termix
     restart: unless-stopped
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
     ports:
       - "127.0.0.1:8443:8443"
     volumes:

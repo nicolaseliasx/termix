@@ -214,20 +214,6 @@ Salva um conjunto de abas com a divisão da tela e reabre tudo com um clique. O 
 </td>
 <td width="50%" valign="top">
 
-**Configuração guiada:**
-Uma configuração curta te leva por escolher uma predefinição de interface, o tema, as funcionalidades que queres e o teu primeiro host. O modo simples esconde o que não usas, e dá para refazer a configuração ou trocar de predefinição quando quiseres.
-
-</td>
-</tr>
-<tr>
-<td width="50%" valign="top">
-
-**Desktop independente e sincronização:**
-O aplicativo de desktop roda sozinho, com backend e banco de dados locais, sem servidor. Também dá para ligar num servidor Termix e sincronizar nos dois sentidos hosts, credenciais, trechos e mais, e escolher se as conexões saem da tua máquina ou passam pelo servidor.
-
-</td>
-<td width="50%" valign="top">
-
 **Linha de comando:**
 Um CLI `termix` para o teu shell e os teus scripts. Abre terminais, roda um comando num host ou numa frota inteira, move arquivos por SFTP e gerencia hosts, trechos e credenciais. Instala com `npm install -g @termix-cli/cli` ou pega um binário independente. Vê a [documentação do CLI](https://docs.termix.site/cli).
 
@@ -237,7 +223,7 @@ Um CLI `termix` para o teu shell e os teus scripts. Abre terminais, roda um coma
 <td width="50%" valign="top">
 
 **Segurança:**
-Senhas, chaves e outros segredos são criptografados por usuário, e os próprios arquivos do banco de dados podem ser criptografados em disco. Vê a [documentação](https://docs.termix.site/security) para entender como funciona.
+Senhas, chaves e outros segredos são criptografados por usuário, e os próprios arquivos do banco de dados podem ser criptografados em disco. Vê a [documentação](https://docs.termix.site/features/authentication/security/) para entender como funciona.
 
 </td>
 <td width="50%" valign="top">
@@ -267,8 +253,13 @@ Cerca de 30 idiomas incluídos, gerenciados pelo [Crowdin](https://docs.termix.s
 - **Atalhos de teclado** - Trocar de aba, fechar abas e mais, tudo remapeável
 - **Wake-on-LAN** - Liga uma máquina pelo Termix ou por um passo de automação
 - **Autenticação por proxy confiável** - Deixa um proxy reverso cuidar do login e repassar o usuário
-- **SSH bem completo** - Hosts de salto, Warpgate, pedidos de TOTP, SOCKS5, verificação de chave de host, preenchimento automático de senha, [OPKSSH](https://github.com/openpubkey/opkssh), tmux, port knocking, registro do terminal, encaminhamento de agente, agente SSH do Bitwarden, assinatura SSH com HashiCorp Vault e mais
+- **Marca própria** - Os administradores podem rebatizar a instância com nome, logo e cores próprios
+- **Endpoints web** - Abre a interface web do próprio host, como a página de administração de um roteador, embutida no Termix em vez de numa aba separada
+- **Salas de colaboração** - Salas persistentes onde um grupo pode passar de uma sessão para outra junto, com um palco de apresentação e convites
+- **SSH bem completo** - Hosts de salto, Warpgate, pedidos de TOTP, SOCKS5, verificação de chave de host, preenchimento automático de senha, [OPKSSH](https://github.com/openpubkey/opkssh), tmux, port knocking, registro do terminal, encaminhamento de agente, agente SSH do Bitwarden, assinatura SSH com HashiCorp Vault, Step CA, 1Password Connect e mais
 - **Termix ID** - Uma versão embutida do sshid.io. Registra um identificador, publica as tuas chaves públicas numa URL de resolução e emite certificados SSH pela CA embutida
+- **Sugestões automáticas de histórico de comandos** - Sugestões dentro do terminal enquanto tu digitas, baseadas no teu histórico de comandos
+- **Desktop independente e sincronização** - O aplicativo de desktop roda sozinho, com backend e banco de dados locais, e pode opcionalmente sincronizar com um servidor Termix
 
 </details>
 
@@ -390,42 +381,51 @@ O Termix é gratuito e de código aberto, sem assinaturas nem planos pagos. Se e
 
 Tens interesse num espaço pago para apoiar o desenvolvimento? Escreve para [mail@termix.site](mailto:mail@termix.site).
 
+<!-- SPONSORS:START -->
+
 <div align="center">
 
 <br />
 
 <a href="https://www.digitalocean.com/">
-  <img src="https://opensource.nyc3.cdn.digitaloceanspaces.com/attribution/assets/SVG/DO_Logo_horizontal_blue.svg" height="40" alt="DigitalOcean" />
+  <img src="https://termix.site/img/sponsors/digitalocean.svg" height="40" alt="DigitalOcean" />
 </a>
 &nbsp;&nbsp;&nbsp;
 <a href="https://crowdin.com/">
-  <img src="https://support.crowdin.com/assets/logos/core-logo/svg/crowdin-core-logo-cDark.svg" height="40" alt="Crowdin" />
+  <img src="https://termix.site/img/sponsors/crowdin.svg" height="40" alt="Crowdin" />
 </a>
 &nbsp;&nbsp;&nbsp;
 <a href="https://www.blacksmith.sh/">
-  <img src="https://cdn.prod.website-files.com/681bfb0c9a4601bc6e288ec4/683ca9e2c5186757092611b8_e8cb22127df4da0811c4120a523722d2_logo-backsmith-wordmark-light.svg" height="40" alt="Blacksmith" />
+  <img src="https://termix.site/img/sponsors/blacksmith.svg" height="40" alt="Blacksmith" />
 </a>
 &nbsp;&nbsp;&nbsp;
 <a href="https://www.cloudflare.com/">
-  <img src="https://sirv.sirv.com/website/screenshots/cloudflare/cloudflare-logo.png?w=300" height="40" alt="Cloudflare" />
+  <img src="https://termix.site/img/sponsors/cloudflare.png" height="40" alt="Cloudflare" />
 </a>
 &nbsp;&nbsp;&nbsp;
 <a href="https://akamai.com/">
-  <img src="https://upload.wikimedia.org/wikipedia/commons/8/8b/Akamai_logo.svg" height="40" alt="Akamai" />
+  <img src="https://termix.site/img/sponsors/akamai.svg" height="40" alt="Akamai" />
 </a>
 &nbsp;&nbsp;&nbsp;
 <a href="https://aws.amazon.com/">
-  <img src="https://upload.wikimedia.org/wikipedia/commons/thumb/9/93/Amazon_Web_Services_Logo.svg/960px-Amazon_Web_Services_Logo.svg.png" height="40" alt="AWS" />
+  <img src="https://termix.site/img/sponsors/aws.png" height="40" alt="AWS" />
 </a>
 &nbsp;&nbsp;&nbsp;
 <a href="https://rackgenius.com/">
-  <img src="https://rackgenius.com/rackgenius-logo.png" height="40" alt="Rack Genius" />
+  <img src="https://termix.site/img/sponsors/rackgenius.png" height="40" alt="Rack Genius" />
 </a>
 &nbsp;&nbsp;&nbsp;
 <a href="https://ginernet.com/">
-  <img src="https://ginernet.com/img/logo-web.png" height="40" alt="Ginernet" />
+  <img src="https://termix.site/img/sponsors/ginernet.png" height="40" alt="Ginernet" />
 </a>
+&nbsp;&nbsp;&nbsp;
+<a href="https://www.hetzner.com/?mtm_campaign=termix&mtm_medium=referral&mtm_content=sponsoring_link">
+  <img src="https://termix.site/img/sponsors/hetzner.png" height="40" alt="Hetzner" />
+</a>
+
 </div>
+
+<!-- SPONSORS:END -->
 
 <br />
 

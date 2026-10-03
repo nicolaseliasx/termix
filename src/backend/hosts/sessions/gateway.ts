@@ -8,6 +8,7 @@ import { execCommand, withTmuxPath } from "../tmux/helper.js";
 import {
   buildPersistentTmuxCreateCommand,
   buildPersistentTmuxFreezeCommand,
+  buildPersistentTmuxKillByNameCommand,
   buildPersistentTmuxKillCommand,
   buildPersistentTmuxListCommand,
   buildPersistentTmuxMarkCommand,
@@ -52,6 +53,8 @@ export interface PersistentSessionGateway {
     input: { oldName: string; newName: string; id: string },
   ): Promise<void>;
   kill(host: SSHHost, name: string, id: string): Promise<void>;
+  /** Kills by session name only; only for sessions no record can own. */
+  killUnguarded(host: SSHHost, name: string): Promise<void>;
   freeze(host: SSHHost, name: string): Promise<void>;
   thaw(host: SSHHost, name: string): Promise<void>;
 }
@@ -122,6 +125,9 @@ export class SshPersistentSessionGateway implements PersistentSessionGateway {
   }
   async kill(host: SSHHost, name: string, id: string): Promise<void> {
     await this.execute(host, buildPersistentTmuxKillCommand(name, id));
+  }
+  async killUnguarded(host: SSHHost, name: string): Promise<void> {
+    await this.execute(host, buildPersistentTmuxKillByNameCommand(name));
   }
   async freeze(host: SSHHost, name: string): Promise<void> {
     await this.execute(host, buildPersistentTmuxFreezeCommand(name));

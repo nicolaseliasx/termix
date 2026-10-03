@@ -8,12 +8,17 @@ import { createCurrentHostResolutionRepository } from "../repositories/factory.j
 
 interface HostNetworkRoutesDeps {
   authenticateJWT: RequestHandler;
+  requireViewPermission: RequestHandler;
   requireDataAccess: RequestHandler;
 }
 
 export function registerHostNetworkRoutes(
   router: Router,
-  { authenticateJWT, requireDataAccess }: HostNetworkRoutesDeps,
+  {
+    authenticateJWT,
+    requireViewPermission,
+    requireDataAccess,
+  }: HostNetworkRoutesDeps,
 ): void {
   /**
    * @openapi
@@ -63,6 +68,7 @@ export function registerHostNetworkRoutes(
   router.post(
     "/db/proxy/test",
     authenticateJWT,
+    requireViewPermission,
     requireDataAccess,
     async (req: AuthenticatedRequest, res: Response) => {
       try {

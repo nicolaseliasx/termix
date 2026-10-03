@@ -76,10 +76,6 @@ function errorText(error: unknown): string {
   if (message.includes("OFFLINE")) return "The host is offline.";
   return message;
 }
-function isRemoteUnavailable(error: unknown): boolean {
-  const message = error instanceof Error ? error.message : "";
-  return /unavailable/i.test(message) || /SSH timeout/i.test(message);
-}
 export function SessionsPanel({
   onAttach,
   onAttachSplit,
@@ -101,10 +97,7 @@ export function SessionsPanel({
   const [sessionToTerminate, setSessionToTerminate] =
     useState<PersistentSession | null>(null);
   const [terminating, setTerminating] = useState(false);
-  const [terminateError, setTerminateError] = useState<{
-    text: string;
-    force: boolean;
-  } | null>(null);
+  const [terminateError, setTerminateError] = useState<string | null>(null);
   const [hostId, setHostId] = useState("");
   const [name, setName] = useState("");
   const serverStatus = useOptionalServerStatus();
@@ -228,13 +221,10 @@ export function SessionsPanel({
       setSessionToTerminate(null);
       setTerminateError(null);
     } catch (reason) {
-      // Keep the dialog open: the failure is usually a dead host, and the
-      // force path is the way out for records that can never reach their
-      // remote again.
-      setTerminateError({
-        text: errorText(reason),
-        force: isRemoteUnavailable(reason),
-      });
+      // Keep the dialog open: the failure is usually a dead host or a
+      // marker wiped by a tmux restart, and the force path is the way out
+      // for records that can never be terminated the guarded way.
+      setTerminateError(errorText(reason));
     } finally {
       setTerminating(false);
     }
@@ -462,19 +452,17 @@ export function SessionsPanel({
             >
               <AlertCircle className="size-4 shrink-0" />
               <div>
-                <p>{terminateError.text}</p>
-                {terminateError.force && (
-                  <p className="mt-1 text-muted-foreground">
-                    The host cannot be reached. Force remove ends the local
-                    record without touching the remote tmux session.
-                  </p>
-                )}
+                <p>{terminateError}</p>
+                <p className="mt-1 text-muted-foreground">
+                  Force remove kills the remote tmux session by name when no
+                  other record owns it, and always clears the card.
+                </p>
               </div>
             </div>
           )}
           <AlertDialogFooter>
             <AlertDialogCancel disabled={terminating}>Cancel</AlertDialogCancel>
-            {terminateError?.force && (
+            {terminateError && (
               <AlertDialogAction
                 className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
                 disabled={terminating}

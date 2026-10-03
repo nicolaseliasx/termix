@@ -1,11 +1,18 @@
 import { useState, useEffect } from "react";
 import { useTranslation } from "react-i18next";
 import { notifyAiStatusChanged } from "@/hooks/use-ai-availability";
+import { useBranding } from "@/contexts/BrandingContext";
 import {
   getAiGloballyEnabled,
   getAiPrivateEndpoints,
+  getNotificationPrivateEndpoints,
+  getStepCaPrivateEndpoints,
+  setStepCaPrivateEndpoints as setStepCaPrivateEndpointsApi,
+  getSecretSourcePrivateEndpoints,
+  setSecretSourcePrivateEndpoints as setSecretSourcePrivateEndpointsApi,
   setAiGloballyEnabled as setAiGloballyEnabledApi,
   setAiPrivateEndpoints as setAiPrivateEndpointsApi,
+  setNotificationPrivateEndpoints as setNotificationPrivateEndpointsApi,
 } from "@/api/ai-api";
 import {
   getUserList,
@@ -52,9 +59,12 @@ import {
   getTerminalImageStorageSettings,
   updateTerminalImageStorageSettings,
   testTerminalImageStorage,
+  getBranding,
+  updateBranding,
   type HostDefaults,
   type TerminalImageStorageSettings,
   type TerminalImageStorageTestResult,
+  type BrandingSettings,
 } from "@/api/settings-api";
 import {
   getSessionSharingGloballyEnabled,
@@ -92,6 +102,12 @@ import {
   type AdminUser,
 } from "./AdminManagementSections";
 import { toast } from "sonner";
+import {
+  getTerminalSessionSettings,
+  updateTerminalSessionSettings,
+  getStepCaSettings,
+  updateStepCaSettings,
+} from "@/api/settings-api";
 import { getDatabaseTransferUrl } from "@/lib/database-transfer-url";
 import {
   AdminDatabaseSection,
@@ -122,6 +138,7 @@ import {
 import { cacheTouchInputSettings } from "@/features/terminal/touch-input-settings-store";
 import { AdminTouchInputSection } from "./AdminTouchInputSection";
 import { AdminImageStorageSection } from "./AdminImageStorageSection";
+import { AdminBrandingSection } from "./AdminBrandingSection";
 
 type ApiErrorLike = {
   response?: {
@@ -153,6 +170,12 @@ export function AdminSettingsPanel({
   const [allowPasswordLogin, setAllowPasswordLogin] = useState(true);
   const [allowPasswordReset, setAllowPasswordReset] = useState(true);
   const [sessionTimeout, setSessionTimeout] = useState("24");
+  const [terminalTimeout, setTerminalTimeout] = useState("30");
+  useEffect(() => {
+    getTerminalSessionSettings()
+      .then((settings) => setTerminalTimeout(String(settings.timeoutMinutes)))
+      .catch(() => {});
+  }, []);
   const [statusInterval, setStatusInterval] = useState("60");
   const [metricsInterval, setMetricsInterval] = useState("30");
   const [metricsHistoryRetention, setMetricsHistoryRetention] = useState("7");
@@ -170,6 +193,29 @@ export function AdminSettingsPanel({
     useState(true);
   const [aiGloballyEnabled, setAiGloballyEnabled] = useState(false);
   const [aiPrivateEndpoints, setAiPrivateEndpoints] = useState<string[]>([]);
+  const [stepCaPrivateEndpoints, setStepCaPrivateEndpoints] = useState<
+    string[]
+  >([]);
+  const [secretSourcePrivateEndpoints, setSecretSourcePrivateEndpoints] =
+    useState<string[]>([]);
+  const [stepCaSettings, setStepCaSettings] = useState({
+    caUrl: "",
+    fingerprint: "",
+    provisioner: "",
+  });
+  useEffect(() => {
+    getStepCaSettings()
+      .then((s) =>
+        setStepCaSettings({
+          caUrl: s.caUrl,
+          fingerprint: s.fingerprint,
+          provisioner: s.provisioner,
+        }),
+      )
+      .catch(() => {});
+  }, []);
+  const [notificationPrivateEndpoints, setNotificationPrivateEndpoints] =
+    useState<string[]>([]);
   const [hostDefaults, setHostDefaults] = useState<HostDefaults>({});
   const [touchInputSettings, setTouchInputSettings] =
     useState<TouchInputSettings>({ ...TOUCH_INPUT_DEFAULTS });
@@ -184,6 +230,11 @@ export function AdminSettingsPanel({
   const [imageStorageTesting, setImageStorageTesting] = useState(false);
   const [imageStorageTestResult, setImageStorageTestResult] =
     useState<TerminalImageStorageTestResult | null>(null);
+
+  const [brandingSettings, setBrandingSettings] =
+    useState<BrandingSettings | null>(null);
+  const [brandingSaving, setBrandingSaving] = useState(false);
+  const { applyBranding } = useBranding();
 
   // SSO / auto-provision state
   const [oidcAutoProvision, setOidcAutoProvision] = useState(false);
@@ -366,7 +417,11 @@ export function AdminSettingsPanel({
         touchInput,
         aiEnabled,
         aiEndpoints,
+        notificationEndpoints,
+        stepCaEndpoints,
+        secretSourceEndpoints,
         imageStorage,
+        branding,
       ] = await Promise.allSettled([
         getRegistrationAllowed(),
         getPasswordLoginAllowed(),
@@ -384,7 +439,11 @@ export function AdminSettingsPanel({
         getTouchInputSettings(),
         getAiGloballyEnabled(),
         getAiPrivateEndpoints(),
+        getNotificationPrivateEndpoints(),
+        getStepCaPrivateEndpoints(),
+        getSecretSourcePrivateEndpoints(),
         getTerminalImageStorageSettings(),
+        getBranding(),
       ]);
 
       if (reg.status === "fulfilled") setAllowRegistration(reg.value.allowed);
@@ -436,8 +495,20 @@ export function AdminSettingsPanel({
       if (aiEndpoints.status === "fulfilled") {
         setAiPrivateEndpoints(aiEndpoints.value);
       }
+      if (stepCaEndpoints.status === "fulfilled") {
+        setStepCaPrivateEndpoints(stepCaEndpoints.value);
+      }
+      if (secretSourceEndpoints.status === "fulfilled") {
+        setSecretSourcePrivateEndpoints(secretSourceEndpoints.value);
+      }
+      if (notificationEndpoints.status === "fulfilled") {
+        setNotificationPrivateEndpoints(notificationEndpoints.value);
+      }
       if (imageStorage.status === "fulfilled") {
         setImageStorageSettings(imageStorage.value);
+      }
+      if (branding.status === "fulfilled") {
+        setBrandingSettings(branding.value);
       }
     } catch {
       // non-fatal
@@ -595,6 +666,54 @@ export function AdminSettingsPanel({
     }
   }
 
+  async function handleSaveStepCaSettings() {
+    try {
+      await updateStepCaSettings(stepCaSettings);
+      toast.success(t("admin.stepCaSaved"));
+    } catch (error) {
+      toast.error(
+        error instanceof Error ? error.message : t("admin.stepCaSaveFailed"),
+      );
+    }
+  }
+
+  async function handleSaveSecretSourcePrivateEndpoints(hosts: string[]) {
+    const previous = secretSourcePrivateEndpoints;
+    setSecretSourcePrivateEndpoints(hosts);
+    try {
+      setSecretSourcePrivateEndpoints(
+        await setSecretSourcePrivateEndpointsApi(hosts),
+      );
+    } catch {
+      setSecretSourcePrivateEndpoints(previous);
+      toast.error(t("admin.updateSecretSourceEndpointsFailed"));
+    }
+  }
+
+  async function handleSaveStepCaPrivateEndpoints(hosts: string[]) {
+    const previous = stepCaPrivateEndpoints;
+    setStepCaPrivateEndpoints(hosts);
+    try {
+      setStepCaPrivateEndpoints(await setStepCaPrivateEndpointsApi(hosts));
+    } catch {
+      setStepCaPrivateEndpoints(previous);
+      toast.error(t("admin.updateStepCaEndpointsFailed"));
+    }
+  }
+
+  async function handleSaveNotificationPrivateEndpoints(hosts: string[]) {
+    const previous = notificationPrivateEndpoints;
+    setNotificationPrivateEndpoints(hosts);
+    try {
+      setNotificationPrivateEndpoints(
+        await setNotificationPrivateEndpointsApi(hosts),
+      );
+    } catch {
+      setNotificationPrivateEndpoints(previous);
+      toast.error(t("admin.updateNotificationEndpointsFailed"));
+    }
+  }
+
   async function saveTouchInputSettings(settings = touchInputSettings) {
     try {
       const saved = await updateTouchInputSettings(settings);
@@ -636,6 +755,40 @@ export function AdminSettingsPanel({
     }
   }
 
+  async function handleSaveBranding() {
+    if (!brandingSettings) return;
+    setBrandingSaving(true);
+    try {
+      const saved = await updateBranding({
+        appName: brandingSettings.appName,
+        tagline: brandingSettings.tagline,
+        logo: brandingSettings.logo,
+      });
+      setBrandingSettings(saved);
+      applyBranding(saved);
+      toast.success(t("admin.brandingSaved"));
+    } catch (e) {
+      toast.error(apiErrorMessage(e, t("admin.brandingSaveFailed")));
+    } finally {
+      setBrandingSaving(false);
+    }
+  }
+
+  async function handleResetBrandingLogo() {
+    if (!brandingSettings) return;
+    setBrandingSaving(true);
+    try {
+      const saved = await updateBranding({ logo: null });
+      setBrandingSettings(saved);
+      applyBranding(saved);
+      toast.success(t("admin.brandingSaved"));
+    } catch (e) {
+      toast.error(apiErrorMessage(e, t("admin.brandingSaveFailed")));
+    } finally {
+      setBrandingSaving(false);
+    }
+  }
+
   async function handleTestImageStorage() {
     if (!imageStorageInstanceId.trim()) {
       toast.error(t("admin.imageStorageInstanceIdRequired"));
@@ -665,6 +818,20 @@ export function AdminSettingsPanel({
       toast.success(t("admin.sessionTimeoutSaved"));
     } catch {
       toast.error(t("admin.sessionTimeoutSaveFailed"));
+    }
+  }
+
+  async function handleSaveTerminalTimeout() {
+    const minutes = parseInt(terminalTimeout, 10);
+    if (isNaN(minutes) || minutes < 1 || minutes > 1440) {
+      toast.error(t("admin.terminalSessionTimeoutRange"));
+      return;
+    }
+    try {
+      await updateTerminalSessionSettings({ timeoutMinutes: minutes });
+      toast.success(t("admin.terminalSessionTimeoutSaved"));
+    } catch {
+      toast.error(t("admin.terminalSessionTimeoutSaveFailed"));
     }
   }
 
@@ -1120,6 +1287,19 @@ export function AdminSettingsPanel({
         onToggleAiGloballyEnabled={handleToggleAiGloballyEnabled}
         aiPrivateEndpoints={aiPrivateEndpoints}
         onSaveAiPrivateEndpoints={handleSaveAiPrivateEndpoints}
+        notificationPrivateEndpoints={notificationPrivateEndpoints}
+        stepCaPrivateEndpoints={stepCaPrivateEndpoints}
+        onSaveStepCaPrivateEndpoints={handleSaveStepCaPrivateEndpoints}
+        secretSourcePrivateEndpoints={secretSourcePrivateEndpoints}
+        onSaveSecretSourcePrivateEndpoints={
+          handleSaveSecretSourcePrivateEndpoints
+        }
+        stepCaSettings={stepCaSettings}
+        setStepCaSettings={setStepCaSettings}
+        handleSaveStepCaSettings={handleSaveStepCaSettings}
+        onSaveNotificationPrivateEndpoints={
+          handleSaveNotificationPrivateEndpoints
+        }
         handleToggleSessionSharingGloballyEnabled={
           handleToggleSessionSharingGloballyEnabled
         }
@@ -1139,6 +1319,9 @@ export function AdminSettingsPanel({
         sessionTimeout={sessionTimeout}
         setSessionTimeout={setSessionTimeout}
         handleSaveSessionTimeout={handleSaveSessionTimeout}
+        terminalTimeout={terminalTimeout}
+        setTerminalTimeout={setTerminalTimeout}
+        handleSaveTerminalTimeout={handleSaveTerminalTimeout}
         statusInterval={statusInterval}
         setStatusInterval={setStatusInterval}
         metricsInterval={metricsInterval}
@@ -1246,6 +1429,16 @@ export function AdminSettingsPanel({
         testResult={imageStorageTestResult}
         onSave={() => void handleSaveImageStorage()}
         onTest={() => void handleTestImageStorage()}
+      />
+
+      <AdminBrandingSection
+        open={openSections.has("branding")}
+        onToggle={() => toggle("branding")}
+        settings={brandingSettings}
+        setSettings={setBrandingSettings}
+        saving={brandingSaving}
+        onSave={() => void handleSaveBranding()}
+        onResetLogo={() => void handleResetBrandingLogo()}
       />
 
       <AdminDatabaseSection

@@ -41,6 +41,7 @@ function fixtures(
   const gateway = {
     list: vi.fn(async () => remote),
     kill: vi.fn(async () => undefined),
+    killUnguarded: vi.fn(async () => undefined),
   };
   const service = new PersistentSessionLifecycleService(
     repository as never,
@@ -85,10 +86,42 @@ describe("PersistentSessionLifecycleService kill", () => {
     await service.kill("session-id", "u", { force: true });
 
     expect(gateway.kill).not.toHaveBeenCalled();
+    expect(gateway.killUnguarded).not.toHaveBeenCalled();
     expect(repository.markEnded).toHaveBeenCalledWith(
       "session-id",
       "u",
       "killed-unreachable",
+    );
+  });
+
+  it("fails without force when the remote session lost its marker", async () => {
+    // A tmux server restart recreates sessions without termix markers; the
+    // guarded terminate must refuse, force kills by name instead.
+    const { gateway, service } = fixtures([{ name: "codex" }]);
+
+    await expect(service.kill("session-id", "u")).rejects.toMatchObject({
+      code: "PERSISTENT_SESSION_MARKER_MISMATCH",
+    });
+    expect(gateway.killUnguarded).not.toHaveBeenCalled();
+  });
+
+  it("kills an unmarked remote session by name on force", async () => {
+    const { repository, gateway, service } = fixtures();
+    gateway.list
+      .mockResolvedValueOnce([{ name: "codex" }])
+      .mockResolvedValueOnce([]);
+
+    await service.kill("session-id", "u", { force: true });
+
+    expect(gateway.killUnguarded).toHaveBeenCalledWith(
+      expect.objectContaining({ id: 7 }),
+      "codex",
+    );
+    expect(gateway.kill).not.toHaveBeenCalled();
+    expect(repository.markEnded).toHaveBeenCalledWith(
+      "session-id",
+      "u",
+      "killed",
     );
   });
 
