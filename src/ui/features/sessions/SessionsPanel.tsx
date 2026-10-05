@@ -70,6 +70,12 @@ function formatAge(iso: string): string {
   return `${Math.floor(days / 7)}w`;
 }
 function errorText(error: unknown): string {
+  const code =
+    error instanceof Error && "code" in error ? error.code : undefined;
+  if (code === "PERSISTENT_SESSION_MARKER_MISMATCH")
+    return "This remote session belongs to another record. Force remove clears only this card.";
+  if (code === "PERSISTENT_SESSION_CONFLICT")
+    return "A session with this name already exists.";
   const message = error instanceof Error ? error.message : "Request failed";
   if (message.includes("CONFLICT"))
     return "This session is already in use. Refresh and try again.";
@@ -245,13 +251,13 @@ export function SessionsPanel({
   return (
     <>
       <section
-        className="flex min-h-0 flex-1 flex-col overflow-y-auto p-3"
+        className="flex min-h-0 flex-1 flex-col overflow-hidden p-3 [@media(max-height:520px)]:overflow-y-auto"
         aria-label="Persistent sessions"
       >
         <SectionCard
           title="Create session"
           icon={<TerminalSquare className="size-4" />}
-          className="mb-4"
+          className="mb-4 shrink-0"
         >
           <form
             onSubmit={submit}
@@ -312,120 +318,130 @@ export function SessionsPanel({
             </Button>
           </form>
         </SectionCard>
-        {error && (
-          <div
-            role="alert"
-            className="mb-3 flex gap-2 rounded border border-destructive/50 p-3 text-sm"
-          >
-            <AlertCircle className="size-4 shrink-0" />
-            {error}
-          </div>
-        )}
-        {loading ? (
-          <div className="flex justify-center p-8">
-            <Loader2 className="animate-spin" />
-          </div>
-        ) : sessions.length === 0 ? (
-          <div className="border border-dashed p-6 text-center text-sm text-muted-foreground">
-            No persistent sessions yet. Create one to keep a terminal running
-            when you close the browser.
-          </div>
-        ) : (
-          <ul className="space-y-2" aria-live="polite">
-            {sessions.map((session) => {
-              const host = hostById.get(session.hostId);
-              const ended = Boolean(session.endedAt);
-              const status = host
-                ? getHostAvailability(Number(host.id))
-                : "offline";
-              return (
-                <li key={session.id}>
-                  <SectionCard
-                    title={session.displayName}
-                    icon={<TerminalSquare className="size-4" />}
-                    action={
-                      <div className="flex gap-1">
-                        <Button
-                          size="icon"
-                          variant="ghost"
-                          title="Rename session"
-                          onClick={() => void rename(session)}
-                          disabled={ended}
-                        >
-                          ✎
-                        </Button>
-                        <Button
-                          size="icon"
-                          variant="ghost"
-                          title="Terminate remote session"
-                          onClick={() => {
-                            setTerminateError(null);
-                            setSessionToTerminate(session);
-                          }}
-                          disabled={ended}
-                        >
-                          <Trash2 className="size-4" />
-                        </Button>
-                      </div>
-                    }
-                  >
-                    <div className="py-2">
-                      <p className="truncate text-xs text-muted-foreground">
-                        {host?.name ?? `Host #${session.hostId}`}
-                      </p>
-                      <div className="mt-1 flex items-center gap-1 text-xs text-muted-foreground">
-                        {session.hibernatedAt && !ended && (
-                          <Snowflake
-                            className="size-3 shrink-0 text-sky-400"
-                            aria-label="Session is in standby"
-                          />
-                        )}
-                        <p className="truncate">
-                          {ended
-                            ? session.endReason || "terminated"
-                            : session.hibernatedAt
-                              ? `standby · frozen ${formatAge(session.hibernatedAt)} · up ${formatAge(session.createdAt)}`
-                              : status === "online"
-                                ? `running · up ${formatAge(session.createdAt)}`
-                                : formatHostStatus(status) + " · not available"}
+        <div
+          className="min-h-0 flex-1 overflow-y-auto overscroll-contain [@media(max-height:520px)]:min-h-fit [@media(max-height:520px)]:overflow-visible"
+          role="region"
+          aria-label="Saved sessions"
+          tabIndex={0}
+        >
+          {error && (
+            <div
+              role="alert"
+              className="mb-3 flex gap-2 rounded border border-destructive/50 p-3 text-sm"
+            >
+              <AlertCircle className="size-4 shrink-0" />
+              {error}
+            </div>
+          )}
+          {loading ? (
+            <div className="flex justify-center p-8">
+              <Loader2 className="animate-spin" />
+            </div>
+          ) : sessions.length === 0 ? (
+            <div className="border border-dashed p-6 text-center text-sm text-muted-foreground">
+              No persistent sessions yet. Create one to keep a terminal running
+              when you close the browser.
+            </div>
+          ) : (
+            <ul className="space-y-2" aria-live="polite">
+              {sessions.map((session) => {
+                const host = hostById.get(session.hostId);
+                const ended = Boolean(session.endedAt);
+                const status = host
+                  ? getHostAvailability(Number(host.id))
+                  : "offline";
+                return (
+                  <li key={session.id}>
+                    <SectionCard
+                      title={session.displayName}
+                      icon={<TerminalSquare className="size-4" />}
+                      action={
+                        <div className="flex gap-1">
+                          <Button
+                            size="icon"
+                            variant="ghost"
+                            title="Rename session"
+                            onClick={() => void rename(session)}
+                            disabled={ended}
+                          >
+                            ✎
+                          </Button>
+                          <Button
+                            size="icon"
+                            variant="ghost"
+                            title="Terminate remote session"
+                            onClick={() => {
+                              setTerminateError(null);
+                              setSessionToTerminate(session);
+                            }}
+                            disabled={ended}
+                          >
+                            <Trash2 className="size-4" />
+                          </Button>
+                        </div>
+                      }
+                    >
+                      <div className="py-2">
+                        <p className="truncate text-xs text-muted-foreground">
+                          {host?.name ?? `Host #${session.hostId}`}
                         </p>
-                      </div>
-                      <div className="mt-3 flex flex-wrap gap-2">
-                        <Button
-                          size="sm"
-                          className="bg-emerald-600 text-white hover:bg-emerald-700"
-                          disabled={ended || status !== "online" || !host}
-                          onClick={() => host && onAttach(session, host)}
-                        >
-                          <TerminalSquare className="mr-1 size-4" />
-                          Attach
-                        </Button>
-                        {onAttachSplit && (
+                        <div className="mt-1 flex items-center gap-1 text-xs text-muted-foreground">
+                          {session.hibernatedAt && !ended && (
+                            <Snowflake
+                              className="size-3 shrink-0 text-sky-400"
+                              aria-label="Session is in standby"
+                            />
+                          )}
+                          <p className="truncate">
+                            {ended
+                              ? session.endReason || "terminated"
+                              : session.hibernatedAt
+                                ? `standby · frozen ${formatAge(session.hibernatedAt)} · up ${formatAge(session.createdAt)}`
+                                : status === "online"
+                                  ? `running · up ${formatAge(session.createdAt)}`
+                                  : formatHostStatus(status) +
+                                    " · not available"}
+                          </p>
+                        </div>
+                        <div className="mt-3 flex flex-wrap gap-2">
                           <Button
                             size="sm"
-                            variant="outline"
-                            title="Attach in split view"
+                            className="bg-emerald-600 text-white hover:bg-emerald-700"
                             disabled={ended || status !== "online" || !host}
-                            onClick={() => host && onAttachSplit(session, host)}
+                            onClick={() => host && onAttach(session, host)}
                           >
-                            <Columns2 className="mr-1 size-4" />
-                            Split
+                            <TerminalSquare className="mr-1 size-4" />
+                            Attach
                           </Button>
-                        )}
-                        {status !== "online" && (
-                          <span className="flex items-center gap-1 self-center text-xs text-muted-foreground">
-                            <WifiOff className="size-3" />
-                            Host {formatHostStatus(status)}
-                          </span>
-                        )}
+                          {onAttachSplit && (
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              title="Attach in split view"
+                              disabled={ended || status !== "online" || !host}
+                              onClick={() =>
+                                host && onAttachSplit(session, host)
+                              }
+                            >
+                              <Columns2 className="mr-1 size-4" />
+                              Split
+                            </Button>
+                          )}
+                          {status !== "online" && (
+                            <span className="flex items-center gap-1 self-center text-xs text-muted-foreground">
+                              <WifiOff className="size-3" />
+                              Host {formatHostStatus(status)}
+                            </span>
+                          )}
+                        </div>
                       </div>
-                    </div>
-                  </SectionCard>
-                </li>
-              );
-            })}
-          </ul>
-        )}
+                    </SectionCard>
+                  </li>
+                );
+              })}
+            </ul>
+          )}
+        </div>
       </section>
       <AlertDialog
         open={sessionToTerminate !== null}

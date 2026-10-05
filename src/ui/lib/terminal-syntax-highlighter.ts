@@ -85,11 +85,16 @@ const SSH_BRACKET_HEADING_RE =
 function isShellPromptLine(bare: string): boolean {
   const plain = bare.replace(STRIP_ANSI_RE, "");
   // Matches a trailing prompt: "user@host:~$ ", "root@pi:/home/pi# ", "[user@host dir]$ "
-  if (/(?:[\w.-]+@[\w.-]+|[\w.-]+).*?[$#%>]\s*$/.test(plain)) return true;
+  // An unanchored word followed by a lazy wildcard backtracks heavily on
+  // long output lines without a prompt terminator.
+  if (/[$#%>]\s*$/.test(plain) && /[\w.-]/.test(plain)) return true;
   // Matches a leading prompt followed by a command: "user@host:/path$ cmd arg"
   // This is the echoed command line — the shell colors the prompt prefix itself,
   // so injecting extra ANSI codes into it causes visual corruption / doubled paths.
-  if (/^(?:\[?[\w.-]+@[\w.-]+[\w./ ~-]*\]?|[\w.-]+).*?[$#%>]\s+\S/.test(plain))
+  if (
+    /[$#%>]\s+\S/.test(plain) &&
+    /^(?:\[?[\w.-]+@[\w.-]+[\w./ ~-]*\]?|[\w.-]+)/.test(plain)
+  )
     return true;
   return false;
 }

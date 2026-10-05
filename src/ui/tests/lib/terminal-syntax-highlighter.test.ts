@@ -255,6 +255,19 @@ describe("highlightTerminalOutput", () => {
     expect(out).toBe(prompt);
   });
 
+  it("keeps long plain output and prompt lines intact", () => {
+    const text = "x".repeat(1000);
+    expect(highlightTerminalOutput(text)).toBe(text);
+    expect(highlightTerminalOutput(text + "$ ")).toBe(text + "$ ");
+  });
+
+  it("processes a burst of long plain lines without pathological backtracking", () => {
+    const text = "x".repeat(1000);
+    const started = performance.now();
+    for (let i = 0; i < 50; i++) highlightTerminalOutput(text);
+    expect(performance.now() - started).toBeLessThan(500);
+  });
+
   it("does not highlight log keywords inside bracketed SSH headings", () => {
     const out = highlightTerminalOutput("[info@archlinux] command output");
     expect(out).toBe("[info@archlinux] command output");

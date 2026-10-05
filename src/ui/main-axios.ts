@@ -1083,7 +1083,7 @@ export function handleApiError(error: unknown, operation: string): never {
       throw new ApiError(
         "Conflict. The resource already exists or is in use.",
         409,
-        "CONFLICT",
+        code || "CONFLICT",
       );
     } else if (status === 422) {
       apiLogger.warn(

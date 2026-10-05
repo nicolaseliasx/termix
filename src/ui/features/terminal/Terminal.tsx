@@ -494,6 +494,7 @@ const TerminalInner = forwardRef<TerminalHandle, SSHTerminalProps>(
     const autocompleteSelectedIndexRef = useRef(0);
     const autosuggestionRef = useRef("");
     const autosuggestionSuppressedRef = useRef(false);
+    const autosuggestionFrameRef = useRef<number | null>(null);
 
     const searchAddonRef = useRef<SearchAddon | null>(null);
     const searchInputRef = useRef<HTMLInputElement | null>(null);
@@ -728,10 +729,27 @@ const TerminalInner = forwardRef<TerminalHandle, SSHTerminalProps>(
     }, [clearAutosuggestion, getCursorScreenPosition, isAutocompleteEnabled]);
 
     const scheduleAutosuggestionUpdate = useCallback(() => {
-      window.requestAnimationFrame(() => {
-        updateAutosuggestion();
+      if (isUnmountingRef.current) return;
+      if (!isAutocompleteEnabled()) {
+        if (autosuggestionRef.current) clearAutosuggestion();
+        return;
+      }
+      if (autosuggestionFrameRef.current !== null) return;
+      autosuggestionFrameRef.current = window.requestAnimationFrame(() => {
+        autosuggestionFrameRef.current = null;
+        if (!isUnmountingRef.current) updateAutosuggestion();
       });
-    }, [updateAutosuggestion]);
+    }, [clearAutosuggestion, isAutocompleteEnabled, updateAutosuggestion]);
+
+    useEffect(
+      () => () => {
+        if (autosuggestionFrameRef.current !== null) {
+          window.cancelAnimationFrame(autosuggestionFrameRef.current);
+          autosuggestionFrameRef.current = null;
+        }
+      },
+      [updateAutosuggestion],
+    );
 
     const acceptAutosuggestion = useCallback(() => {
       const suffix = autosuggestionRef.current;
@@ -1829,8 +1847,10 @@ const TerminalInner = forwardRef<TerminalHandle, SSHTerminalProps>(
               }
 
               const output = applyLocalEchoToOutput(msg.data);
-              terminal.write(formatTerminalOutput(output));
-              scheduleAutosuggestionUpdate();
+              terminal.write(
+                formatTerminalOutput(output),
+                scheduleAutosuggestionUpdate,
+              );
               // Strip ANSI escape codes before testing — newer sudo versions (Ubuntu 26.04+)
               // emit colored prompts with embedded escape sequences that break the regex.
               const strippedData = msg.data.replace(
@@ -1841,8 +1861,10 @@ const TerminalInner = forwardRef<TerminalHandle, SSHTerminalProps>(
             } else {
               const stringData = String(msg.data);
               const output = applyLocalEchoToOutput(stringData);
-              terminal.write(formatTerminalOutput(output));
-              scheduleAutosuggestionUpdate();
+              terminal.write(
+                formatTerminalOutput(output),
+                scheduleAutosuggestionUpdate,
+              );
             }
           } else if (msg.type === "error") {
             const errorMessage = msg.message || t("terminal.unknownError");

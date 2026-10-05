@@ -53,7 +53,7 @@ export interface PersistentSessionGateway {
     input: { oldName: string; newName: string; id: string },
   ): Promise<void>;
   kill(host: SSHHost, name: string, id: string): Promise<void>;
-  /** Kills by session name only; only for sessions no record can own. */
+  /** Kills by name only while the remote session has no ownership marker. */
   killUnguarded(host: SSHHost, name: string): Promise<void>;
   freeze(host: SSHHost, name: string): Promise<void>;
   thaw(host: SSHHost, name: string): Promise<void>;

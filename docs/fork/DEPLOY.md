@@ -164,3 +164,26 @@ Relevant diff (see commit `chore(fork): local theme, SSL SAN for IP domain and c
   and SplitScreen asset discovery, preserved the `termix-data` mount, and had
   no startup error/fatal entries. Public validation was not available from the
   host because `termix.ncls.cc` did not resolve at deploy time.
+
+## Session conflict and terminal performance deploy (2026-10-05)
+
+- Backup: `backups/termix-data-20261005-before-conflict-fix.tar.gz`
+  (`sha256:bcc94e380b40bdce5d95e60a14f90e0d4361062ad1383524735eb63064a10b4b`,
+  41,342,394 bytes, `admin:admin`, mode `0600`), made from the read-only volume
+  and verified with `tar -tzf`.
+- Candidate and deployed image: `termix:candidate-20261005-conflict-fix`
+  (`sha256:895ee4ad92c0439f1d5ed66c08216b0be3ecfff2f3b522a75acb21803614accb`),
+  built with `TERMIX_BUILD_PROFILE=custom` and `FEATURE_SPLIT_TERMINAL=true`.
+- Rollback image: `termix:rollback-20261005-conflict-fix`
+  (`sha256:f8683077c1828d61332cc66a0352096e0bf91a3adba0b5c105d00b482ee887b1`).
+- Isolated candidate passed Docker health, HTTPS `200`, backend health, Sessions
+  and SplitScreen asset discovery, and unauthenticated Sessions API `401`.
+- Production passed Docker health, backend health, public HTTPS `200`, Sessions
+  API `401` without authentication, and retained the `termix-data` mount.
+
+To roll back the application image without changing persistent data:
+
+```sh
+docker tag termix:rollback-20261005-conflict-fix termix:latest
+docker compose -f docker/docker-compose.local.yml up -d --no-build termix
+```

@@ -32,6 +32,7 @@ function fixtures(
   const saved = overrides.ended ?? record();
   const repository = {
     findByIdForUser: vi.fn(async () => saved),
+    findActiveByHostAndTmux: vi.fn(async () => saved),
     markEnded: vi.fn(async (_id: string, _userId: string, reason: string) => ({
       ...saved,
       endedAt: "2026-09-22T00:00:00.000Z",
@@ -94,15 +95,47 @@ describe("PersistentSessionLifecycleService kill", () => {
     );
   });
 
-  it("fails without force when the remote session lost its marker", async () => {
-    // A tmux server restart recreates sessions without termix markers; the
-    // guarded terminate must refuse, force kills by name instead.
-    const { gateway, service } = fixtures([{ name: "codex" }]);
+  it("terminates an unmarked remote session owned by the local record", async () => {
+    const { repository, gateway, service } = fixtures();
+    gateway.list
+      .mockResolvedValueOnce([{ name: "codex" }])
+      .mockResolvedValueOnce([]);
+
+    await service.kill("session-id", "u");
+
+    expect(gateway.killUnguarded).toHaveBeenCalledWith(
+      expect.objectContaining({ id: 7 }),
+      "codex",
+    );
+    expect(repository.markEnded).toHaveBeenCalledWith(
+      "session-id",
+      "u",
+      "killed",
+    );
+  });
+
+  it("does not kill an unmarked session owned by another active record", async () => {
+    const { repository, gateway, service } = fixtures([{ name: "codex" }]);
+    repository.findActiveByHostAndTmux.mockResolvedValue({
+      ...record(),
+      id: "someone-else",
+    });
 
     await expect(service.kill("session-id", "u")).rejects.toMatchObject({
       code: "PERSISTENT_SESSION_MARKER_MISMATCH",
     });
     expect(gateway.killUnguarded).not.toHaveBeenCalled();
+    expect(repository.markEnded).not.toHaveBeenCalled();
+  });
+
+  it("keeps the local record when an unmarked remote session survives kill", async () => {
+    const { repository, gateway, service } = fixtures([{ name: "codex" }]);
+
+    await expect(service.kill("session-id", "u")).rejects.toMatchObject({
+      code: "PERSISTENT_SESSION_REMOTE_FAILED",
+    });
+    expect(repository.markEnded).not.toHaveBeenCalled();
+    expect(gateway.list).toHaveBeenCalledTimes(2);
   });
 
   it("kills an unmarked remote session by name on force", async () => {

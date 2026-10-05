@@ -424,34 +424,6 @@ wss.on("connection", async (ws: WebSocket, req) => {
     userId,
   });
 
-  // TEMP DIAGNOSTIC: log every outbound control message type so stalled
-  // terminal connections (e.g. waiting on an invisible auth prompt) are
-  // visible in backend logs. Binary/stream frames are not logged.
-  const rawWsSend = ws.send.bind(ws);
-  ws.send = ((data: unknown, cb?: (err?: Error) => void) => {
-    if (typeof data === "string") {
-      try {
-        const parsed = JSON.parse(data) as {
-          type?: unknown;
-          code?: unknown;
-          role?: unknown;
-        };
-        if (typeof parsed.type === "string") {
-          sshLogger.info(`WS-> client ${parsed.type}`, {
-            operation: "terminal_ws_send",
-            sessionId,
-            userId,
-            code: typeof parsed.code === "string" ? parsed.code : undefined,
-            role: typeof parsed.role === "string" ? parsed.role : undefined,
-          });
-        }
-      } catch {
-        // non-JSON frame - ignore
-      }
-    }
-    return rawWsSend(data as never, cb as never);
-  }) as typeof ws.send;
-
   let currentSessionId: string | null = null;
   let persistentAttachment: PersistentAttachment | null = null;
   let sshConn: SSHClientType | null = null;

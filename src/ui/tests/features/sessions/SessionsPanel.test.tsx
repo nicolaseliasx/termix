@@ -203,7 +203,7 @@ describe("SessionsPanel host availability", () => {
 
     await user.click(await screen.findByTitle("Terminate remote session"));
     expect(
-      await screen.findByRole("dialog", { name: "Terminate session?" }),
+      await screen.findByRole("alertdialog", { name: "Terminate session?" }),
     ).toBeInTheDocument();
     await user.click(screen.getByRole("button", { name: "Terminate" }));
 
@@ -260,10 +260,7 @@ describe("SessionsPanel host availability", () => {
     await waitFor(() => expect(onTerminate).toHaveBeenCalledWith(session));
   });
 
-  it("offers force removal when a 409 conflict blocks the terminate", async () => {
-    // A tmux server restart wipes every session marker; the guarded
-    // terminate then fails with a generic 409 and force is the only way
-    // out. The button must appear for conflicts, not just dead hosts.
+  it("offers local removal when another record owns the remote session", async () => {
     const user = userEvent.setup();
     const session = persistentSession();
     mocks.listPersistentSessions.mockResolvedValue({
@@ -272,7 +269,9 @@ describe("SessionsPanel host availability", () => {
     });
     mocks.killPersistentSession
       .mockRejectedValueOnce(
-        new Error("Conflict. The resource already exists or is in use."),
+        Object.assign(new Error("Conflict"), {
+          code: "PERSISTENT_SESSION_MARKER_MISMATCH",
+        }),
       )
       .mockResolvedValueOnce({
         ...session,
@@ -290,7 +289,9 @@ describe("SessionsPanel host availability", () => {
       await screen.findByRole("button", { name: "Force remove" }),
     ).toBeInTheDocument();
     expect(
-      screen.getByText("Conflict. The resource already exists or is in use."),
+      screen.getByText(
+        "This remote session belongs to another record. Force remove clears only this card.",
+      ),
     ).toBeInTheDocument();
   });
 

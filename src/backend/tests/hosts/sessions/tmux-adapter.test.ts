@@ -60,11 +60,14 @@ describe("persistent tmux adapter", () => {
     expect(command).not.toContain("-t '=safe-session'");
     expect(command).toContain("! tmux has-session");
   });
-  it("kills by name only in the marker-free fallback and confirms it", () => {
+  it("kills by name only if the remote marker is still absent", () => {
     const command = buildPersistentTmuxKillByNameCommand(input.name);
+    expect(command).toContain("test -z");
+    expect(command).toContain(
+      "show-option -t 'safe-session' -qv @termix_session_id",
+    );
     expect(command).toContain("tmux kill-session -t 'safe-session'");
     expect(command).toContain("! tmux has-session -t 'safe-session'");
-    expect(command).not.toContain("@termix_session_id");
   });
   it("lists zero sessions without treating an idle tmux server as offline", () => {
     const command = buildPersistentTmuxListCommand();
