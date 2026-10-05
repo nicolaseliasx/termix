@@ -97,10 +97,7 @@ import {
 import { isTabKeyEvent, isPhysicalShortcutKey } from "./terminal-key-event.ts";
 import { installTouchWheelCoordinator } from "./touch-wheel-coordinator.ts";
 import { loadTouchInputSettings } from "./touch-input-settings-store.ts";
-import {
-  handleTerminalClipboardKeyEvent,
-  getUseRightClickCopyPaste,
-} from "./terminal-clipboard.ts";
+import { getUseRightClickCopyPaste } from "./terminal-clipboard.ts";
 import { quoteTerminalImagePath } from "./terminal-image-path.ts";
 import { hydrateLocalSharedHostAuth } from "@/lib/remote-server-api.ts";
 import {
@@ -3499,12 +3496,11 @@ const TerminalInner = forwardRef<TerminalHandle, SSHTerminalProps>(
         }
 
         if (
-          !handleTerminalClipboardKeyEvent(
-            e,
-            terminal,
-            { writeTextToClipboard, readTextFromClipboard },
-            { plainPasteMode: "native" },
-          )
+          e.ctrlKey &&
+          !e.shiftKey &&
+          !e.altKey &&
+          !e.metaKey &&
+          isPhysicalShortcutKey(e, "KeyC", "c")
         ) {
           const selection = terminal.getSelection();
           if (selection) {
