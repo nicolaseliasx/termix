@@ -1,11 +1,13 @@
-const CACHE_NAME = "termix-static-v2";
+const CACHE_NAME = "termix-static-v4";
 const BASE_PATH = "__TERMIX_SW_BASE_PATH__";
+const ICON_VERSION = "?v=4";
 const STATIC_ASSETS = [
-  `${BASE_PATH}/favicon.ico`,
-  `${BASE_PATH}/icons/48x48.png`,
-  `${BASE_PATH}/icons/128x128.png`,
-  `${BASE_PATH}/icons/256x256.png`,
-  `${BASE_PATH}/icons/512x512.png`,
+  `${BASE_PATH}/favicon.ico${ICON_VERSION}`,
+  `${BASE_PATH}/terminal-favicon-v4.ico`,
+  `${BASE_PATH}/icons/48x48.png${ICON_VERSION}`,
+  `${BASE_PATH}/icons/128x128.png${ICON_VERSION}`,
+  `${BASE_PATH}/icons/256x256.png${ICON_VERSION}`,
+  `${BASE_PATH}/icons/512x512.png${ICON_VERSION}`,
 ];
 
 self.addEventListener("install", (event) => {
@@ -68,26 +70,28 @@ self.addEventListener("fetch", (event) => {
     return;
   }
 
-  const isStaticAsset = STATIC_ASSETS.some((asset) => url.pathname === asset);
+  const staticAsset = STATIC_ASSETS.find(
+    (asset) => url.pathname === new URL(asset, self.location.origin).pathname,
+  );
 
-  if (!isStaticAsset) {
+  if (!staticAsset) {
     return;
   }
 
   event.respondWith(
-    caches.match(request).then((cachedResponse) => {
+    caches.match(staticAsset).then((cachedResponse) => {
       if (cachedResponse) {
         return cachedResponse;
       }
 
-      return fetch(request).then((response) => {
+      return fetch(staticAsset).then((response) => {
         if (!response || response.status !== 200 || response.type !== "basic") {
           return response;
         }
 
         const responseClone = response.clone();
         caches.open(CACHE_NAME).then((cache) => {
-          cache.put(request, responseClone);
+          cache.put(staticAsset, responseClone);
         });
 
         return response;

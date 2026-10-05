@@ -1,5 +1,5 @@
 import sharp from "sharp";
-import { readFileSync, writeFileSync, mkdirSync } from "fs";
+import { readFileSync, writeFileSync, mkdirSync, copyFileSync } from "fs";
 import { join, dirname } from "path";
 import { fileURLToPath } from "url";
 
@@ -11,6 +11,7 @@ const iconsDir = join(publicDir, "icons");
 mkdirSync(iconsDir, { recursive: true });
 
 const svgBuffer = readFileSync(join(publicDir, "icon.svg"));
+writeFileSync(join(publicDir, "favicon.svg"), svgBuffer);
 
 const pngSizes = [16, 24, 32, 48, 64, 128, 256, 512, 1024];
 
@@ -54,6 +55,11 @@ const icoBuffers = await Promise.all(
 );
 writeFileSync(join(publicDir, "favicon.ico"), buildIco(icoBuffers, icoSizes));
 console.log("  ✓ favicon.ico");
+copyFileSync(
+  join(publicDir, "favicon.ico"),
+  join(publicDir, "terminal-favicon-v4.ico"),
+);
+console.log("  ✓ terminal-favicon-v4.ico");
 
 // icon.ico — embed 16, 32, 48, 64, 128, 256 px layers
 console.log("Generating icon.ico...");
@@ -64,20 +70,36 @@ const winBuffers = await Promise.all(
 writeFileSync(join(publicDir, "icon.ico"), buildIco(winBuffers, winSizes));
 console.log("  ✓ icon.ico");
 
-// icons/icon.ico and icons/icon.icns placeholders (stubs pointing to source)
-// electron-builder generates .icns; copy the 1024 PNG as icons/icon.png for reference
-await sharp(svgBuffer)
-  .resize(1024, 1024)
-  .png()
-  .toFile(join(iconsDir, "icon.ico").replace("icon.ico", "1024x1024.png"));
-// Copy icon.ico and icon.icns into icons/ as well
-import { copyFileSync } from "fs";
+// macOS ICNS PNG chunks for Retina sizes used by electron-builder.
+const icnsSizes = [128, 256, 512, 1024];
+const icnsTypes = ["ic07", "ic08", "ic09", "ic10"];
+const icnsChunks = await Promise.all(
+  icnsSizes.map(async (size, index) => {
+    const png = await sharp(svgBuffer).resize(size, size).png().toBuffer();
+    const chunk = Buffer.alloc(8 + png.length);
+    chunk.write(icnsTypes[index], 0, 4, "ascii");
+    chunk.writeUInt32BE(chunk.length, 4);
+    png.copy(chunk, 8);
+    return chunk;
+  }),
+);
+const icnsHeader = Buffer.alloc(8);
+icnsHeader.write("icns", 0, 4, "ascii");
+icnsHeader.writeUInt32BE(
+  8 + icnsChunks.reduce((sum, chunk) => sum + chunk.length, 0),
+  4,
+);
+writeFileSync(
+  join(publicDir, "icon.icns"),
+  Buffer.concat([icnsHeader, ...icnsChunks]),
+);
+copyFileSync(join(publicDir, "icon.icns"), join(iconsDir, "icon.icns"));
+console.log("  ✓ icon.icns and icons/icon.icns");
+
 copyFileSync(join(publicDir, "icon.ico"), join(iconsDir, "icon.ico"));
 console.log("  ✓ icons/icon.ico");
 
-console.log(
-  "\nDone! Note: icon.icns requires macOS tools (iconutil). Use electron-builder on macOS to generate it.",
-);
+console.log("\nDone!");
 
 /**
  * Builds a minimal ICO file from PNG buffers.

@@ -36,7 +36,8 @@ const BrandingContext = createContext<BrandingContextValue>({
 });
 
 function applyDocumentBranding(settings: BrandingSettings): void {
-  document.title = settings.appName;
+  document.title =
+    settings.appName === DEFAULT_APP_NAME ? "termix" : settings.appName;
   if (settings.logo) {
     captureDefaultIconHrefs(DEFAULT_ICON_HREFS, (selector) =>
       document.querySelector<HTMLLinkElement>(selector),

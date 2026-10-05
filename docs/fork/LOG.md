@@ -372,3 +372,44 @@ wake_on_lan, advanced_audit`. Flags are injected by Vite `define` as
   plugins. A direct merge leaves about 100 TypeScript errors after building the
   new SDK, including the persistent session module and terminal UI. It has not
   been deployed; porting the module to the new plugin architecture remains.
+
+### 2026-10-04 — Terminal icon and lowercase browser title
+
+- Replaced the bundled logo with a simple terminal prompt across SVG, favicon
+  ICO, PWA PNG sizes, and Windows/macOS/Linux desktop icon assets. The icon
+  generator now writes matching favicon SVG and ICNS files too.
+- The default browser title and mobile install name are `termix`; custom
+  branding names remain as configured. Versioned icon and manifest URLs plus
+  service worker cache v3 avoid old browser and CDN icon responses.
+- Cloudflare still has older unversioned `/favicon.ico`, `/favicon.svg`, and
+  `/icons/*` responses cached. A targeted purge returned `401` because the
+  local Cloudflare token lacks cache purge permission; versioned URLs serve
+  the new files now. Existing bookmarks may retain their locally cached icon
+  until the browser refreshes it or the bookmark is recreated.
+- Validated the Docker production build, isolated startup and health, the
+  branding document test on Node 26, and public SVG/ICO/512px PNG hashes.
+  Production is healthy; public HTTPS serves the new icons and title, and the
+  unauthenticated persistent-sessions API still returns `401`.
+- Backup: `backups/termix-data-20261004-icons.tar.gz` (SHA-256
+  `c4fc4766c8987bc430178936f836ddd154bdf67413536474b9d5fab158ec710d`,
+  verified, mode `0640`). Current image:
+  `sha256:b39cd581319c7a97067c311cf06c15f095105e2dff27ad4a031bac2578e05dc7`.
+  Rollback image: `termix:rollback-icons-20261004`.
+
+### 2026-10-04 — Bookmark bar favicon follow-up
+
+- The screenshot of an existing bookmark still showed the old orange icon.
+  Production branding has `appName=Termix` and no custom logo; the cause was
+  the Cloudflare-cached unversioned `/favicon.ico` and Chromium's saved icon
+  mapping for the page URL.
+- HTML now advertises one ICO candidate at a new path,
+  `/terminal-favicon-v4.ico`, and the service worker cache and PWA icon URLs
+  moved to v4. The new ICO has the same SHA-256 as the generated favicon:
+  `ef396251a536301bc0b07b31e590776471a7808e01b4daff330292255b73279a`.
+- Built and deployed a frontend-only overlay image on the existing backend:
+  `sha256:f8683077c1828d61332cc66a0352096e0bf91a3adba0b5c105d00b482ee887b1`.
+  Rollback image: `termix:rollback-icon-v3-20261004`. Public HTML and ICO
+  hashes match; Termix is healthy. In an isolated Chromium profile, a fresh
+  visit stored the new ICO for the page URL. After changing that profile's
+  mapping to the old `/favicon.ico` URL, another visit replaced it with the
+  new ICO mapping. Existing bookmarks should refresh on the next visit.
