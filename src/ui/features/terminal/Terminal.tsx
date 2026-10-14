@@ -290,6 +290,10 @@ const TerminalInner = forwardRef<TerminalHandle, SSHTerminalProps>(
     const [isQuickConnectSaved, setIsQuickConnectSaved] = useState(false);
     const [isImageUploading, setIsImageUploading] = useState(false);
     const isImageUploadingRef = useRef(false);
+    // Timestamp of the last native "paste" event observed by the terminal's
+    // capture-phase listener; used to skip the clipboard-read fallback after
+    // the browser already delivered the paste itself.
+    const nativePasteSeenRef = useRef(0);
     const [isConnecting, setIsConnecting] = useState(false);
     const [isFitted, setIsFitted] = useState(false);
     const [connectionError, setConnectionError] = useState<string | null>(null);
@@ -3115,6 +3119,7 @@ const TerminalInner = forwardRef<TerminalHandle, SSHTerminalProps>(
       });
 
       const handlePaste = (e: ClipboardEvent) => {
+        nativePasteSeenRef.current = Date.now();
         const image = e.clipboardData
           ? getPastedImageFile(e.clipboardData)
           : null;
@@ -3576,18 +3581,27 @@ const TerminalInner = forwardRef<TerminalHandle, SSHTerminalProps>(
           !e.metaKey &&
           isPhysicalShortcutKey(e, "KeyV", "v")
         ) {
-          // Some xterm/browser combinations suppress the native paste event.
-          // Read the clipboard during this user gesture so image pastes work
-          // there too; fall back to the usual text paste when no image exists.
-          e.preventDefault();
+          // Do NOT preventDefault: the browser's own paste event fires on the
+          // hidden textarea and the capture-phase paste listener pastes text
+          // directly (and uploads clipboard images) without any clipboard
+          // permission prompt or picker. Returning false only keeps xterm
+          // from swallowing the shortcut as a raw ^V.
           e.stopPropagation();
-          void handleClipboardImage(false).then((pastedImage) => {
-            if (!pastedImage) {
-              readTextFromClipboard().then((text) => {
-                if (text) terminal.paste(text);
-              });
-            }
-          });
+          const pressedAt = Date.now();
+          // Safety net for browser combinations that suppress the native
+          // paste event: read the clipboard during this user gesture so
+          // image pastes still work there; fall back to the usual text
+          // paste when no image exists.
+          window.setTimeout(() => {
+            if (nativePasteSeenRef.current >= pressedAt) return;
+            void handleClipboardImage(false).then((pastedImage) => {
+              if (!pastedImage) {
+                readTextFromClipboard().then((text) => {
+                  if (text) terminal.paste(text);
+                });
+              }
+            });
+          }, 250);
           return false;
         }
 
