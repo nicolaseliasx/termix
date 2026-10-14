@@ -20,7 +20,7 @@ Active deployment names:
 - Connector binary: `/home/admin/.local/bin/cloudflared`
 - Local metrics: `127.0.0.1:20241`
 
-There is no direct SSH route. Databases, Redis, and TeamSpeak remain excluded. The same
+There is no direct SSH route. Databases and Redis remain excluded. The same
 tunnel also carries three explicitly named web applications:
 
 - `https://mercado.ncls.cc` -> `http://127.0.0.1:8081`, public at Cloudflare and
@@ -33,24 +33,6 @@ tunnel also carries three explicitly named web applications:
 
 The final ingress rule is always `http_status:404`; there is no wildcard hostname or
 generic TCP route.
-
-## TeamSpeak DNS
-
-TeamSpeak is intentionally not added to the HTTP tunnel. Voice traffic uses UDP and
-file transfer uses raw TCP, so `familiasacana.ncls.cc` is a DNS-only Cloudflare `A`
-record pointing to the current public IPv4 address. The router/firewall remains
-responsible for forwarding the TeamSpeak ports to the VM.
-
-`scripts/update_cloudflare_ddns.py` refreshes only that exact record. It reads its API
-token from the machine-local `/home/admin/.config/cloudflare/ddns.token` file, which
-must use mode `0600`; neither the token nor the resolved address belongs in this
-repository. The updater runs from `cloudflare-ddns.timer` every five minutes. Its API
-token should be limited to `Zone / DNS / Edit` for the `ncls.cc` zone and must remain
-valid for as long as dynamic DNS is required.
-
-The former DuckDNS updater is not part of the active configuration. The old DuckDNS
-name may continue to resolve at that provider until it is removed from the DuckDNS
-account, but this VM no longer updates or depends on it.
 
 ## LAN fallback
 
@@ -100,11 +82,7 @@ python3 scripts/configure_cloudflare_apps.py
 
 The API token used during the initial expansion reports an expiry of
 `2026-08-31T23:59:59Z`. Its expiry does not interrupt the connector, existing DNS
-records, or published apps, because tunnel runtime uses a separate token. The same API
-token is temporarily used by the TeamSpeak DDNS updater, however, so its expiry must be
-removed or the local DDNS token must be replaced before that timestamp. If it expires,
-the last DNS value remains published but no longer follows a later public-IP change. The
-durable replacement should grant only `Zone / DNS / Edit` for `ncls.cc`.
+records, or published apps, because tunnel runtime uses a separate token.
 
 ## Application-specific limitations
 
