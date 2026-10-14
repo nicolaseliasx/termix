@@ -41,7 +41,7 @@ const MAX_ACTIVE_HOSTS = 4;
 const BACKOFF_MS = [300_000, 900_000, 1_800_000, 3_600_000];
 const FAST_GATE_TIMEOUT_MS = 2_000;
 const HIBERNATE_IDLE_HOURS_SETTING = "persistent_session_idle_hibernate_hours";
-const DEFAULT_IDLE_HIBERNATE_HOURS = 6;
+const DEFAULT_IDLE_HIBERNATE_HOURS = 0;
 const HIBERNATE_HOURS_CACHE_MS = 60_000;
 
 /**
@@ -379,7 +379,14 @@ export class PersistentSessionReconciler {
     result: PersistentSessionHostResult,
   ): Promise<void> {
     const idleHours = await this.getHibernateIdleHours();
-    if (idleHours <= 0) return;
+    if (idleHours <= 0) {
+      if (row.hibernatedAt) {
+        await this.gateway.thaw(host, row.tmuxSessionName);
+        await this.repository.setHibernatedAt(row.id, userId, null);
+        result.thawed += 1;
+      }
+      return;
+    }
 
     // A browser transport or an attached tmux client always wins over the
     // inactivity clock. A hibernated session is woken before attach as a
@@ -442,6 +449,11 @@ export class PersistentSessionReconciler {
 }
 
 async function readConfiguredHours(): Promise<number> {
+  const environmentValue = process.env.PERSISTENT_SESSION_IDLE_HIBERNATE_HOURS;
+  if (environmentValue !== undefined) {
+    const hours = Number(environmentValue);
+    return Number.isFinite(hours) ? hours : DEFAULT_IDLE_HIBERNATE_HOURS;
+  }
   // Keep settings infrastructure out of the reconciler's hot/test import
   // path. This only runs once per cache window in the production default.
   const { createCurrentSettingsRepository } =

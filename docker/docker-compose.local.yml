@@ -27,6 +27,7 @@ services:
       GUACD_RECORDING_PATH: "/termix-data/session_recordings/guacamole"
       ENABLE_TELEMETRY: "false"
       ALLOW_REGISTRATION: "false"
+      PERSISTENT_SESSION_IDLE_HIBERNATE_HOURS: "0"
       PUID: "1001"
       PGID: "1001"
     depends_on:

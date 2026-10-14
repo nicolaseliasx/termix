@@ -187,3 +187,63 @@ To roll back the application image without changing persistent data:
 docker tag termix:rollback-20261005-conflict-fix termix:latest
 docker compose -f docker/docker-compose.local.yml up -d --no-build termix
 ```
+
+## Persistent-session mouse tracking fix (2026-10-05)
+
+- Backup: `backups/termix-data-20261005-before-mouse-fix.tar.gz`
+  (`sha256:8c3871d5e672680b47daf8a64fa132e0d7b09bed377d081a2c2e78561e9606a9`,
+  41,608,986 bytes, mode `0600`), verified with `tar -tzf`.
+- Deployed image: `termix:candidate-20261005-mouse-fix`
+  (`sha256:db8ba39f5388c089d517fae207ccf95cf51e63f5468e15a473d8d339ee676630`),
+  built with `TERMIX_BUILD_PROFILE=custom` and `FEATURE_SPLIT_TERMINAL=true`.
+- Rollback image: `termix:rollback-20261005-mouse-fix`
+  (`sha256:fe7f486575cb38f505a17bc9fbbd3fbd49860cf7c58ac8b1837d93fac1fc2e21`).
+- Isolated candidate passed Docker health, backend health, HTTPS `200`, and unauthenticated
+  Sessions API `401`. Production passed Docker health, local and public HTTPS `200`,
+  local and public Sessions API `401`, and retained the `termix-data` mount.
+
+To roll back the application image without changing persistent data:
+
+```sh
+docker tag termix:rollback-20261005-mouse-fix termix:latest
+docker compose -f docker/docker-compose.local.yml up -d --no-build --force-recreate termix
+```
+
+## Sessions host availability fix (2026-10-10)
+
+- `reachable` hosts now appear in the Sessions picker and allow create/attach;
+  the SSH connection still validates credentials. The panel refreshes when a
+  browser tab becomes visible after time in the background.
+- Frontend-only image `termix:candidate-20261010-sessions-refresh`
+  (`sha256:65b94757a43aac2f9725f74f1b79393ead24a3f9665d944db5c92096d5552e7d`)
+  was built on the existing backend with the custom profile and split terminal
+  enabled. All 15 Sessions panel tests passed.
+
+## Persistent-session hibernation disabled (2026-10-10)
+
+- The default idle hibernation limit is now `0` (disabled). This deployment also
+  pins `PERSISTENT_SESSION_IDLE_HIBERNATE_HOURS=0` in Compose, so an older saved
+  setting cannot turn it back on.
+- Reconciliation sends `SIGCONT` to sessions previously marked hibernated and
+  clears their hibernation timestamp. Attaching also resumes pane processes.
+- Isolated startup passed Docker health, backend health, HTTPS `200`, and
+  unauthenticated Sessions API `401`. Production passed the same checks, public
+  page and new Sessions asset `200`, and retained `termix-data`.
+- At the user's request, every `termix:*rollback*` and
+  `docker-termix:*rollback*` image tag was removed. Earlier rollback commands in
+  this document are historical and no longer work. Data backups were retained.
+
+## Sessions host visibility regression fix (2026-10-10)
+
+- The previous Sessions change still filtered out configured hosts when the
+  status poll was empty, stale, or reported offline. The panel now always lists
+  configured hosts and lets the SSH operation verify actual availability.
+  Session and host requests update independently, so a session-list failure no
+  longer prevents the host picker from loading.
+- Frontend-only image `termix:candidate-20261010-sessions-fix`
+  (`sha256:ae9437e527ab1d745103e8a2445229f179cc5ef2bd17731dd800ae18e3122666`)
+  was built on the deployed backend. All 17 Sessions panel tests, targeted
+  ESLint, and app TypeScript checks passed.
+- Production Docker health is healthy; public page and new Sessions asset
+  return `200`, unauthenticated Sessions API returns `401`, and the existing
+  `termix-data` volume remains mounted. No rollback tag was created.

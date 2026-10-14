@@ -27,6 +27,46 @@ function dependencies(list: () => Promise<unknown[]>) {
 }
 
 describe("PersistentSessionReconciler", () => {
+  it("thaws an existing frozen session when hibernation is disabled", async () => {
+    const deps = dependencies(async () => [
+      {
+        name: "stremnio",
+        activityAt: "1000",
+        attachedClients: 0,
+        marker: { id: "session-id" },
+      },
+    ]);
+    deps.repository.listActiveByHostForUser.mockResolvedValue([
+      {
+        id: "session-id",
+        tmuxSessionName: "stremnio",
+        hibernatedAt: "2026-10-10T12:00:00.000Z",
+      },
+    ]);
+    const reconciler = new PersistentSessionReconciler(
+      deps.repository as never,
+      deps.gateway as never,
+      async () => [],
+      async () => ({ id: 7 }) as never,
+      () => new Date("2026-10-10T18:00:00.000Z"),
+      { reachability: async () => true, hibernateIdleHours: async () => 0 },
+    );
+
+    const result = await reconciler.reconcileHosts([{ id: 7, userId: "u" }]);
+
+    expect(deps.gateway.thaw).toHaveBeenCalledWith(
+      expect.objectContaining({ id: 7 }),
+      "stremnio",
+    );
+    expect(deps.repository.setHibernatedAt).toHaveBeenCalledWith(
+      "session-id",
+      "u",
+      null,
+    );
+    expect(deps.gateway.freeze).not.toHaveBeenCalled();
+    expect(result.results[0]?.thawed).toBe(1);
+  });
+
   it("deduplicates concurrent requests for the same user and host", async () => {
     let release!: () => void;
     const list = vi.fn(

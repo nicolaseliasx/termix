@@ -54,7 +54,7 @@ function buildPersistentTmuxPaneSignalScript(
   if (!validatePersistentSessionName(name))
     throw new Error("PERSISTENT_SESSION_INVALID_NAME");
   return (
-    `tmux list-panes -a -t ${target(name)} -F '#{?pane_dead,,#{pane_pid}}' 2>/dev/null | ` +
+    `tmux list-panes -s -t ${target(name)} -F '#{?pane_dead,,#{pane_pid}}' 2>/dev/null | ` +
     `while read -r pid; do [ -n "$pid" ] || continue; ` +
     `pgid=$(ps -o pgid= -p "$pid" 2>/dev/null | tr -d ' '); ` +
     `[ -n "$pgid" ] && kill -${signal} "-$pgid" 2>/dev/null; ` +
@@ -77,7 +77,16 @@ export function buildPersistentTmuxAttachCommand(
 ): string {
   // A frozen session is revived inline before the attach: SIGCONT on every
   // pane process group is idempotent and silent when nothing is frozen.
-  return `${buildPersistentTmuxPaneSignalScript(name, "CONT")}; tmux -u attach-session ${readOnly ? "-r " : ""}-t ${target(name)}`;
+  // A TUI terminated without disabling mouse tracking can leave its tmux pane
+  // sending mouse reports to the shell. Reset that state only when the pane's
+  // foreground process is a shell; live TUIs keep their mouse mode.
+  const resetShellMouse =
+    `tmux list-panes -s -t ${target(name)} -F '#{pane_id}|#{pane_current_command}|#{mouse_any_flag}' 2>/dev/null | ` +
+    `while IFS='|' read -r pane command mouse; do ` +
+    `case "$command:$mouse" in ` +
+    `sh:1|bash:1|dash:1|zsh:1|fish:1|ksh:1) tmux send-keys -R -t "$pane" 2>/dev/null;; ` +
+    `esac; done`;
+  return `${buildPersistentTmuxPaneSignalScript(name, "CONT")}; ${resetShellMouse}; tmux -u attach-session ${readOnly ? "-r " : ""}-t ${target(name)}`;
 }
 
 export function buildPersistentTmuxHasSessionCommand(name: string): string {

@@ -133,34 +133,34 @@ export function SessionsPanel({
     },
     [getStatus, hostById, serverStatus, statuses],
   );
-  const onlineHosts = useMemo(
-    () =>
-      hosts.filter((host) => getHostAvailability(Number(host.id)) === "online"),
-    [getHostAvailability, hosts],
-  );
   useEffect(() => {
-    if (hostId && getHostAvailability(Number(hostId)) !== "online") {
+    if (hostId && !hostById.has(Number(hostId))) {
       setHostId("");
     }
-  }, [getHostAvailability, hostId]);
-  // Keep the default host pre-selected whenever it is available, so the
-  // create form is always ready to submit for it.
+  }, [hostById, hostId]);
+  // Host status is only a hint. A fresh status poll may be missing or stale,
+  // while the SSH connection itself can still succeed.
   useEffect(() => {
     if (hostId) return;
-    const defaultHost = onlineHosts.find(isDefaultHost);
+    const defaultHost = hosts.find(isDefaultHost);
     if (defaultHost) setHostId(String(defaultHost.id));
-  }, [hostId, onlineHosts]);
+  }, [hostId, hosts]);
   const refresh = useCallback(
     async (signal?: AbortSignal) => {
       try {
         setError(null);
-        const [page, rawHosts] = await Promise.all([
+        const [pageResult, hostsResult] = await Promise.allSettled([
           listPersistentSessions(signal),
           getSSHHosts({ includeStatus: false }),
         ]);
         if (signal?.aborted) return;
-        setSessions(page.data);
-        setHosts(rawHosts.map(sshHostToHost));
+        if (pageResult.status === "fulfilled")
+          setSessions(pageResult.value.data);
+        if (hostsResult.status === "fulfilled") {
+          setHosts(hostsResult.value.map(sshHostToHost));
+        }
+        if (pageResult.status === "rejected") throw pageResult.reason;
+        if (hostsResult.status === "rejected") throw hostsResult.reason;
         if (refreshStatuses) await refreshStatuses();
       } catch (reason) {
         if (!signal?.aborted) setError(errorText(reason));
@@ -181,24 +181,23 @@ export function SessionsPanel({
     onRegisterRefresh?.(refresh);
   }, [onRegisterRefresh, refresh]);
   useEffect(() => {
-    if (document.hidden) return;
     const timer = window.setInterval(() => {
       if (!document.hidden) void refresh();
     }, 30_000);
-    return () => window.clearInterval(timer);
+    const refreshOnVisible = () => {
+      if (!document.hidden) void refresh();
+    };
+    document.addEventListener("visibilitychange", refreshOnVisible);
+    return () => {
+      window.clearInterval(timer);
+      document.removeEventListener("visibilitychange", refreshOnVisible);
+    };
   }, [refresh]);
   async function submit(event: FormEvent) {
     event.preventDefault();
     if (!hostId || !name.trim()) return;
     setCreating(true);
     try {
-      if (refreshStatuses) await refreshStatuses();
-      const currentStatus = getHostAvailability(Number(hostId));
-      if (currentStatus !== "online") {
-        throw new Error(
-          `Host is currently ${formatHostStatus(currentStatus)}. Wait until it is online and try again.`,
-        );
-      }
       const session = await createPersistentSession({
         hostId: Number(hostId),
         displayName: name.trim(),
@@ -275,11 +274,9 @@ export function SessionsPanel({
               required
             >
               <option value="">
-                {onlineHosts.length === 0
-                  ? "No online hosts available"
-                  : "Select a host"}
+                {hosts.length === 0 ? "No hosts available" : "Select a host"}
               </option>
-              {onlineHosts.map((host) => (
+              {hosts.map((host) => (
                 <option value={host.id} key={host.id}>
                   {host.name}
                   {isDefaultHost(host) ? " (default)" : ""}
@@ -306,7 +303,7 @@ export function SessionsPanel({
                 creating ||
                 !hostId ||
                 !name.trim() ||
-                getHostAvailability(Number(hostId)) !== "online"
+                !hostById.has(Number(hostId))
               }
             >
               {creating ? (
@@ -399,15 +396,17 @@ export function SessionsPanel({
                                 ? `standby · frozen ${formatAge(session.hibernatedAt)} · up ${formatAge(session.createdAt)}`
                                 : status === "online"
                                   ? `running · up ${formatAge(session.createdAt)}`
-                                  : formatHostStatus(status) +
-                                    " · not available"}
+                                  : status === "reachable"
+                                    ? `reachable · up ${formatAge(session.createdAt)}`
+                                    : formatHostStatus(status) +
+                                      " · not available"}
                           </p>
                         </div>
                         <div className="mt-3 flex flex-wrap gap-2">
                           <Button
                             size="sm"
                             className="bg-emerald-600 text-white hover:bg-emerald-700"
-                            disabled={ended || status !== "online" || !host}
+                            disabled={ended || !host}
                             onClick={() => host && onAttach(session, host)}
                           >
                             <TerminalSquare className="mr-1 size-4" />
@@ -418,7 +417,7 @@ export function SessionsPanel({
                               size="sm"
                               variant="outline"
                               title="Attach in split view"
-                              disabled={ended || status !== "online" || !host}
+                              disabled={ended || !host}
                               onClick={() =>
                                 host && onAttachSplit(session, host)
                               }
@@ -427,7 +426,7 @@ export function SessionsPanel({
                               Split
                             </Button>
                           )}
-                          {status !== "online" && (
+                          {status !== "online" && status !== "reachable" && (
                             <span className="flex items-center gap-1 self-center text-xs text-muted-foreground">
                               <WifiOff className="size-3" />
                               Host {formatHostStatus(status)}

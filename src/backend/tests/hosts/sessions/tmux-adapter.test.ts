@@ -28,11 +28,16 @@ describe("persistent tmux adapter", () => {
     expect(buildPersistentTmuxAttachCommand(input.name, true)).toContain(
       "tmux -u attach-session -r -t 'safe-session'",
     );
+    expect(buildPersistentTmuxAttachCommand(input.name, true)).toContain(
+      'sh:1|bash:1|dash:1|zsh:1|fish:1|ksh:1) tmux send-keys -R -t "$pane"',
+    );
   });
   it("signals pane process groups without ever signalling the tmux server", () => {
     const freeze = buildPersistentTmuxFreezeCommand(input.name);
     const thaw = buildPersistentTmuxThawCommand(input.name);
-    expect(freeze).toContain("tmux list-panes -a -t 'safe-session'");
+    expect(freeze).toContain("tmux list-panes -s -t 'safe-session'");
+    expect(thaw).toContain("tmux list-panes -s -t 'safe-session'");
+    expect(freeze).not.toContain("tmux list-panes -a");
     expect(freeze).toContain('kill -STOP "-$pgid"');
     expect(thaw).toContain('kill -CONT "-$pgid"');
     expect(freeze).not.toContain("kill -STOP tmux");

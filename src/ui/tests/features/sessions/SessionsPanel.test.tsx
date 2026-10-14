@@ -1,4 +1,4 @@
-import { render, screen, waitFor } from "@testing-library/react";
+import { act, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { SSHHostWithStatus } from "@/main-axios";
@@ -88,18 +88,18 @@ describe("SessionsPanel host availability", () => {
     mocks.listPersistentSessions.mockResolvedValue({ data: [], total: 0 });
   });
 
-  it("hides hosts while their status is still being checked", async () => {
+  it("shows configured hosts while their status is still being checked", async () => {
     useStatuses([], false);
 
     render(<SessionsPanel onAttach={vi.fn()} />);
 
     expect(
-      await screen.findByRole("option", { name: "No online hosts available" }),
+      await screen.findByRole("option", { name: "Devhub (default)" }),
     ).toBeInTheDocument();
-    expect(screen.queryByRole("option", { name: /Devhub/i })).toBeNull();
+    expect(screen.getByRole("option", { name: "Old" })).toBeInTheDocument();
   });
 
-  it("shows only hosts confirmed as online", async () => {
+  it("keeps offline hosts visible so the user can retry the connection", async () => {
     useStatuses([
       [1, "online"],
       [3, "offline"],
@@ -110,8 +110,81 @@ describe("SessionsPanel host availability", () => {
     expect(
       await screen.findByRole("option", { name: "Devhub (default)" }),
     ).toBeInTheDocument();
-    expect(screen.queryByRole("option", { name: /Old/i })).toBeNull();
-    expect(screen.queryByText(/checking|offline/i)).toBeNull();
+    expect(screen.getByRole("option", { name: "Old" })).toBeInTheDocument();
+  });
+
+  it("loads hosts even if the sessions request fails", async () => {
+    mocks.listPersistentSessions.mockRejectedValueOnce(
+      new Error("Temporary error"),
+    );
+    useStatuses([], false);
+
+    render(<SessionsPanel onAttach={vi.fn()} />);
+
+    expect(
+      await screen.findByRole("option", { name: "Devhub (default)" }),
+    ).toBeInTheDocument();
+    expect(await screen.findByRole("alert")).toHaveTextContent(
+      "Temporary error",
+    );
+  });
+
+  it("allows attaching while status is stale or unavailable", async () => {
+    const user = userEvent.setup();
+    const onAttach = vi.fn();
+    const session = persistentSession();
+    mocks.listPersistentSessions.mockResolvedValue({
+      data: [session],
+      total: 1,
+    });
+    useStatuses([[1, "offline"]]);
+
+    render(<SessionsPanel onAttach={onAttach} />);
+
+    await user.click(await screen.findByRole("button", { name: "Attach" }));
+    expect(onAttach).toHaveBeenCalledWith(
+      session,
+      expect.objectContaining({ id: "1", name: "Devhub" }),
+    );
+  });
+
+  it("offers a reachable host immediately and allows attaching its session", async () => {
+    const user = userEvent.setup();
+    const onAttach = vi.fn();
+    const session = persistentSession();
+    mocks.listPersistentSessions.mockResolvedValue({
+      data: [session],
+      total: 1,
+    });
+    useStatuses([[1, "reachable"]]);
+
+    render(<SessionsPanel onAttach={onAttach} />);
+
+    const select = await screen.findByLabelText("Host");
+    await waitFor(() => expect(select).toHaveValue("1"));
+    expect(
+      screen.getByRole("option", { name: "Devhub (default)" }),
+    ).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Attach" }));
+    expect(onAttach).toHaveBeenCalledWith(
+      session,
+      expect.objectContaining({ id: "1", name: "Devhub" }),
+    );
+  });
+
+  it("refreshes sessions when the browser tab becomes visible again", async () => {
+    useStatuses([[1, "reachable"]]);
+    render(<SessionsPanel onAttach={vi.fn()} />);
+
+    await waitFor(() =>
+      expect(mocks.listPersistentSessions).toHaveBeenCalledTimes(1),
+    );
+    act(() => {
+      document.dispatchEvent(new Event("visibilitychange"));
+    });
+    await waitFor(() =>
+      expect(mocks.listPersistentSessions).toHaveBeenCalledTimes(2),
+    );
   });
 
   it("pre-selects the devhub default host once it is online", async () => {
@@ -123,13 +196,13 @@ describe("SessionsPanel host availability", () => {
     await waitFor(() => expect(select).toHaveValue("1"));
   });
 
-  it("does not pre-select anything when the default host is offline", async () => {
+  it("pre-selects the default host even when its status probe says offline", async () => {
     useStatuses([[1, "offline"]]);
 
     render(<SessionsPanel onAttach={vi.fn()} />);
 
     const select = await screen.findByLabelText("Host");
-    expect(select).toHaveValue("");
+    await waitFor(() => expect(select).toHaveValue("1"));
   });
 
   it("labels only the devhub host as default", async () => {
@@ -147,7 +220,7 @@ describe("SessionsPanel host availability", () => {
     expect(screen.getByRole("option", { name: "Other" })).toBeInTheDocument();
   });
 
-  it("clears a selected host when it is no longer online", async () => {
+  it("keeps a selected host when its status probe changes", async () => {
     const user = userEvent.setup();
     useStatuses([[1, "online"]]);
     const { rerender } = render(<SessionsPanel onAttach={vi.fn()} />);
@@ -159,8 +232,10 @@ describe("SessionsPanel host availability", () => {
     useStatuses([[1, "offline"]]);
     rerender(<SessionsPanel onAttach={vi.fn()} />);
 
-    await waitFor(() => expect(select).toHaveValue(""));
-    expect(screen.queryByRole("option", { name: "Devhub" })).toBeNull();
+    expect(select).toHaveValue("1");
+    expect(
+      screen.getByRole("option", { name: "Devhub (default)" }),
+    ).toBeInTheDocument();
   });
 
   it("opens a newly created session immediately", async () => {
