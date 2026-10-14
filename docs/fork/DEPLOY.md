@@ -247,3 +247,22 @@ docker compose -f docker/docker-compose.local.yml up -d --no-build --force-recre
 - Production Docker health is healthy; public page and new Sessions asset
   return `200`, unauthenticated Sessions API returns `401`, and the existing
   `termix-data` volume remains mounted. No rollback tag was created.
+
+## Ctrl+V direct paste fix (2026-10-14)
+
+- Plain Ctrl+V no longer reads the clipboard through
+  `navigator.clipboard.read()`/`readText()`, which made Chrome open its
+  clipboard picker panel on every paste. The keydown now lets the browser's
+  native paste event fire; the existing capture-phase paste listener pastes
+  text directly and uploads clipboard images as before. An explicit clipboard
+  read remains only as a 250 ms fallback for browsers that suppress the
+  native paste event.
+- Image `termix:candidate-20261014-ctrlv-paste`
+  (`sha256:aafe34481351b7a8eee1f79963a4218011bf5e1b9431d6da7cdc4c6b283b9999`),
+  built with `TERMIX_BUILD_PROFILE=custom` and `FEATURE_SPLIT_TERMINAL=true`,
+  the same profile as production. Frontend-only change; no data migration.
+- Isolated startup passed Docker health, backend health, HTTPS `200`, and
+  unauthenticated Sessions API `401`; the new Terminal chunk contains the
+  reworked Ctrl+V branch. Production passed Docker health, local and public
+  HTTPS `200`, new index asset `200`, Sessions API `401`, and retained the
+  `termix-data` mount. No rollback tag was created.
