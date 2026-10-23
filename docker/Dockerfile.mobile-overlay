@@ -1,0 +1,5 @@
+# Small deployment layer while the full Termix image is rebuilt from source.
+# Build context: compiled output from `tsc -p tsconfig.node.json`.
+FROM termix:latest
+COPY backend/database/database.js /app/dist/backend/backend/database/database.js
+COPY backend/database/routes/mobile-codex-status.js /app/dist/backend/backend/database/routes/mobile-codex-status.js

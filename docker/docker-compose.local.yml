@@ -2,7 +2,7 @@ name: termix
 
 services:
   termix:
-    image: termix:latest
+    image: termix:ncls-mobile
     build:
       context: ..
       dockerfile: docker/Dockerfile
