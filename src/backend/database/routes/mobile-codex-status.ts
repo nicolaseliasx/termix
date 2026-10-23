@@ -83,7 +83,23 @@ export function parseCodexStatus(raw: string): CodexStatus {
   ) {
     throw new Error("Invalid Codex status response");
   }
-  return status as CodexStatus;
+  const cleanProfile = (profile: ProfileStatus): ProfileStatus => ({
+    state: profile.state,
+    remainingPercent: profile.remainingPercent,
+    windows: profile.windows.map((window) => ({
+      name: window.name,
+      remainingPercent: window.remainingPercent,
+      resetsAt: window.resetsAt,
+    })),
+    activeSessions: [...profile.activeSessions],
+  });
+  return {
+    checkedAt: status.checkedAt,
+    profiles: {
+      codex: cleanProfile(profiles.codex),
+      codex2: cleanProfile(profiles.codex2),
+    },
+  };
 }
 
 async function readStatus(
