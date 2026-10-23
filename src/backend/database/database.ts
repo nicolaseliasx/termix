@@ -36,6 +36,7 @@ import aiRoutes from "../ai/index.js";
 import automationsRoutes from "./routes/automations.js";
 import syncRoutes from "./routes/sync.js";
 import persistentSessionRoutes from "./routes/persistent-sessions.js";
+import mobileCodexStatusRoutes from "./routes/mobile-codex-status.js";
 import { createCorsMiddleware } from "../utils/cors-config.js";
 import { createCompressionMiddleware } from "../utils/compression-config.js";
 import fs from "fs";
@@ -1790,6 +1791,7 @@ app.use("/ai", aiRoutes);
 app.use("/", alertRulesRoutes);
 app.use("/sync", syncRoutes);
 app.use("/api/v1", persistentSessionRoutes);
+app.use("/api/v1", mobileCodexStatusRoutes);
 
 const frontendDistPaths = [
   path.join(__dirname, "../../../dist"),
