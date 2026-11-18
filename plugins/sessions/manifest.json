@@ -1,7 +1,7 @@
 {
   "id": "sessions",
   "name": "Sessions",
-  "version": "0.2.8",
+  "version": "0.2.9",
   "description": "Persistent tmux sessions per host: create, rename, hibernate and reattach from one list.",
   "author": {
     "name": "nicolaseliasx"
@@ -25,6 +25,7 @@
     "hosts:read",
     "ssh:connect",
     "credentials:use",
+    "users:impersonate",
     "network:serve",
     "ui:surface"
   ],

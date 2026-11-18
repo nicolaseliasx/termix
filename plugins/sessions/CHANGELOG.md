@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.2.9
+
+### Fixed
+
+- Declare `users:impersonate`. The background pass acts as each session's owner through `ctx.asUser`, which core refused every minute: reconciliation and idle hibernation never ran from the timer, and each refusal wrote an audit row (with the SQLite backend, a rewrite of the whole database file).
+
 ## 0.2.8
 
 ### Fixed
