@@ -129,8 +129,12 @@ export function createCurrentApiKeyRepository(): ApiKeyRepository {
 export function createCurrentAuditLogRepository(): AuditLogRepository {
   return new AuditLogRepository(
     createCurrentRepositoryContext(),
-    // Rows land on every audited call; the audited action saves on its own.
-    createCurrentRepositoryLazyWriteHook("audit_log_repository_write"),
+    // Rows land on every audited call, including background plugin work, and
+    // any save rewrites the whole SQLite file. The audited action saves on its
+    // own, so the row only marks the database dirty for the periodic flush.
+    needsExplicitPersist(resolveDatabaseDialect())
+      ? () => DatabaseSaveTrigger.markDirty()
+      : undefined,
   );
 }
 

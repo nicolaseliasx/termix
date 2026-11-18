@@ -121,14 +121,19 @@ it("wires SQLite activity to the periodic flush and token changes to immediate p
   }
 });
 
-// Audit rows land on every audited call; a forced save per row rewrote the
-// whole SQLite file each time.
-it("saves SQLite audit rows lazily instead of forcing a save per row", async () => {
+// Audit rows land on every audited call; any save scheduled per row rewrites
+// the whole SQLite file. Even the 30 s lazy save kept a background plugin
+// rewriting a 20 MB file about once a minute (~110 GB/day), so audit rows
+// only mark the database dirty and join the periodic flush.
+it("leaves SQLite audit rows to the periodic flush instead of scheduling a save per row", async () => {
   const saved = process.env[DATABASE_DIALECT_ENV];
   process.env[DATABASE_DIALECT_ENV] = "sqlite";
   const { getDb } = await import("../../../database/db/index.js");
   const { DatabaseSaveTrigger } =
     await import("../../../utils/database-save-trigger.js");
+  const dirty = vi
+    .spyOn(DatabaseSaveTrigger, "markDirty")
+    .mockImplementation(() => {});
   const lazy = vi.spyOn(DatabaseSaveTrigger, "triggerSave").mockResolvedValue();
   const force = vi.spyOn(DatabaseSaveTrigger, "forceSave").mockResolvedValue();
   const query = {
@@ -152,7 +157,8 @@ it("saves SQLite audit rows lazily instead of forcing a save per row", async () 
       });
     }
     expect(force).not.toHaveBeenCalled();
-    expect(lazy).toHaveBeenCalledTimes(100);
+    expect(lazy).not.toHaveBeenCalled();
+    expect(dirty).toHaveBeenCalledTimes(100);
   } finally {
     vi.restoreAllMocks();
     if (saved === undefined) delete process.env[DATABASE_DIALECT_ENV];
