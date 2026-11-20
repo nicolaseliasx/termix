@@ -2,23 +2,34 @@
 
 Production is a single container and a data volume. A new image is promoted only with the owner's authorization, in a maintenance window.
 
-## Current deployment (2026-11-07)
+## Current deployment (2026-11-20)
 
 Production runs on LXC 101 (`192.168.15.41:8443`) with image
-`termix:26.10.6-ncls.5` and compose file
+`termix:26.10.6-ncls.7` and compose file
 `/home/admin/termix-migration/docker-compose.lxc.yml`.
-It is built from `docker/Dockerfile` and bundles `ssh-terminal` 1.2.1-ncls.5
-(terminal refits on resize even after a hidden start) and the generic
-health-monitor correction. Sessions 0.2.8 is installed by upload and accepts
-ssh-terminal ncls.1 to ncls.5.
+It is built from `docker/Dockerfile` and bundles `ssh-terminal` 1.2.1-ncls.5.
+On top of ncls.5 it stops background activity from rewriting the database
+file: audit rows, host key re-verification on SSH connect and plugin lazy
+persists only mark the database dirty for the 5-minute periodic flush.
+Sessions 0.2.9 is installed by upload (it declares `users:impersonate`, so its
+background pass runs).
 
-The stopped-service backup is in `/home/admin/termix-migration/ncls5-20261107/`
-in the LXC (root only). The rollback image is `termix:26.10.6-ncls.4` (still
-loaded on the LXC); Sessions 0.2.8 stays compatible with it. To revert, restore
-the previous image in the production compose file and run
+The stopped-service backup is in `/home/admin/termix-migration/ncls7-20261120/`
+in the LXC (root only). The rollback image is `termix:26.10.6-ncls.6` (still
+loaded on the LXC); `termix:26.10.6-ncls.5` also works with Sessions 0.2.9.
+To revert, restore `compose-before.yml` from the backup directory and run
 `docker compose up -d --no-deps termix`; no schema migration was introduced.
-Earlier deployments: `ncls4-20261107/` (`termix:26.10.6-ncls.4`) and
-`resilience-20261104/` (`termix:resilience-20261104`) in the same directory.
+Earlier deployments: `ncls6-20261118b/` (`termix:26.10.6-ncls.6`),
+`ncls5-20261107/`, `ncls4-20261107/` and `resilience-20261104/` in the same
+directory.
+
+Run the promotion script as a transient systemd unit from the Proxmox node
+shell, so a dropped console cannot stop it halfway:
+`pct exec 101 -- systemd-run --unit=<name> --collect bash <script>`, then
+`pct exec 101 -- journalctl -u <name> -f`. A process backgrounded with
+`nohup`/`setsid` inside `pct exec` is killed when `pct exec` returns. The
+scripts refuse to run twice (they stop if the backup already exists), so a
+second start fails harmlessly.
 
 Container recreation can spend several minutes in the entrypoint's recursive
 ownership preparation on this LXC. Observe that process and allow up to ten
@@ -73,3 +84,10 @@ A plugin that is not bundled (Sessions, Applications, Custom CSS) is updated fro
 - Not measured: the browser effect of the tmux `sync` feature on Codex repaint, and the Sessions backend tests on this machine (they need `better-sqlite3` built for Node 24).
 - Image `termix:26.10.6-ncls.5` was promoted on LXC 101 on 2026-11-07, with `ncls5-promote-20261107.sh` and a `ncls5-resume-20261107.sh` adjustment (the LXC `admin` has no root or Docker). It bundles `ssh-terminal` **1.2.1-ncls.5**; Sessions **0.2.8** was installed by upload first.
 - **Incident:** the update was started from inside Termix (a terminal or Hosts session served by the container being replaced). Stopping the container cut that session in the middle of the promotion, and the rest had to be finished from the Proxmox host. Run a promotion only from the Proxmox console (`pct exec 101`) or another session that does not depend on Termix.
+
+## State on 2026-11-20
+
+- **Problem:** Termix felt slow and LXC 101 wrote ~1.36 MB/s to the HDD shared with the other guests (~117 GB/day), constantly. Every SQLite save serializes and encrypts the whole 20.7 MB database, and background activity kept scheduling saves: an audit row per audited plugin call (Sessions 0.2.8 was also refused `ctx.asUser` every minute and audited each refusal), the host key touch on every SSH connect, and plugin lazy persists. The 30 s minimum gap between lazy saves still meant about two full rewrites a minute.
+- Sessions **0.2.9** (declares `users:impersonate`) was installed by upload on 2026-11-18; the refusals stopped and the background pass runs.
+- Image `termix:26.10.6-ncls.6` (audit rows only mark the database dirty) was promoted on 2026-11-20; the write rate did not change, because the other two sources remained.
+- Image `termix:26.10.6-ncls.7` (release [`v26.10.6-ncls.7`](https://github.com/nicolaseliasx/termix/releases/tag/v26.10.6-ncls.7)) was promoted on 2026-11-20 with `ncls7-promote-20261120.sh` through `systemd-run`. Writes dropped to 1-4 KB/s with one spike per periodic flush: ~270 KB/s average (~24 GB/day). Each flush shows ~80 MB in the Proxmox counters although the code writes the file once (temp file + rename); the cause of that amplification was not measured.
