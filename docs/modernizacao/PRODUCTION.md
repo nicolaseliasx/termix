@@ -14,14 +14,13 @@ persists only mark the database dirty for the 5-minute periodic flush.
 Sessions 0.2.9 is installed by upload (it declares `users:impersonate`, so its
 background pass runs).
 
-The stopped-service backup is in `/home/admin/termix-migration/ncls7-20261120/`
-in the LXC (root only). The rollback image is `termix:26.10.6-ncls.6` (still
-loaded on the LXC); `termix:26.10.6-ncls.5` also works with Sessions 0.2.9.
-To revert, restore `compose-before.yml` from the backup directory and run
-`docker compose up -d --no-deps termix`; no schema migration was introduced.
-Earlier deployments: `ncls6-20261118b/` (`termix:26.10.6-ncls.6`),
-`ncls5-20261107/`, `ncls4-20261107/` and `resilience-20261104/` in the same
-directory.
+On 2026-11-20, after the host restart confirmed ncls.7 stable, the owner had
+every older image, cold backup and promotion artifact deleted from the LXC and
+the devhub; only `termix:26.10.6-ncls.7` and the compose file remain. There is
+no local rollback: to go back, load `termix-26.10.6-ncls.5.tar.gz` from release
+[`v26.10.6-ncls.5`](https://github.com/nicolaseliasx/termix/releases/tag/v26.10.6-ncls.5)
+(Sessions 0.2.9 works with it) and point the compose file at it; no schema
+migration was introduced. Take a fresh cold backup before the next promotion.
 
 Run the promotion script as a transient systemd unit from the Proxmox node
 shell, so a dropped console cannot stop it halfway:
