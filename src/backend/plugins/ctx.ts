@@ -543,8 +543,10 @@ export function createPluginContext(
         if (!needsExplicitPersist(resolveDatabaseDialect())) return;
         const { DatabaseSaveTrigger } =
           await import("../utils/database-save-trigger.js");
+        // Lazy writes are background telemetry written every minute; a save
+        // rewrites the whole SQLite file, so they join the periodic flush.
         if (options?.lazy) {
-          DatabaseSaveTrigger.triggerSave(`plugin_${pluginId}_write`);
+          DatabaseSaveTrigger.markDirty();
           return;
         }
         await DatabaseSaveTrigger.forceSave(`plugin_${pluginId}_write`);

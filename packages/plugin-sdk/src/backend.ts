@@ -118,9 +118,10 @@ export interface PluginDatabase {
    */
   persist: (options?: {
     /**
-     * Mark the database dirty and let the debounced save pick it up, rather
-     * than saving now. For frequent, low-value writes such as samples, where
-     * losing a couple of seconds on a crash is fine.
+     * Mark the database dirty and let the periodic flush (every few
+     * minutes, and on shutdown) pick it up, rather than saving now. For
+     * frequent, low-value writes such as samples, where losing the last few
+     * minutes on a crash is fine.
      */
     lazy?: boolean;
   }) => Promise<void>;

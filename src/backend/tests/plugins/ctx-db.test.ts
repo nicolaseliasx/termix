@@ -53,6 +53,12 @@ vi.mock("../../utils/database-save-trigger.js", () => ({
     forceSave: async (reason: string) => {
       saves.push(reason);
     },
+    triggerSave: async (reason: string) => {
+      saves.push(`lazy:${reason}`);
+    },
+    markDirty: () => {
+      saves.push("dirty");
+    },
   },
 }));
 
@@ -113,6 +119,18 @@ describe("ctx.db.persist", () => {
 
     expect(saves).toEqual(["plugin_demo_write"]);
     expect(ctx.db.dialect).toBe("sqlite");
+  });
+
+  // Background plugins write every minute (metrics samples, session
+  // observations). A lazy save per write still rewrote the whole 20 MB file
+  // about twice a minute, so lazy writes only join the periodic flush.
+  it("leaves lazy writes to the periodic flush instead of scheduling a save", async () => {
+    grants.set("demo", ["db:own"]);
+    const { ctx } = contextFor("demo", ["db:own"]);
+
+    await ctx.db.persist({ lazy: true });
+
+    expect(saves).toEqual(["dirty"]);
   });
 
   it("does nothing on an engine that is already durable", async () => {

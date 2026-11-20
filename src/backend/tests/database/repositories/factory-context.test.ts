@@ -78,6 +78,28 @@ describe("createCurrentRepositoryLazyWriteHook", () => {
     else process.env[DATABASE_DIALECT_ENV] = saved;
   });
 
+  // Runs on every SSH connect (host key re-verified). A scheduled save per
+  // connect rewrote the whole SQLite file about once a minute, so it only
+  // marks the database dirty for the periodic flush.
+  it("marks SQLite dirty instead of scheduling a save", async () => {
+    process.env[DATABASE_DIALECT_ENV] = "sqlite";
+    const { DatabaseSaveTrigger } =
+      await import("../../../utils/database-save-trigger.js");
+    const dirty = vi
+      .spyOn(DatabaseSaveTrigger, "markDirty")
+      .mockImplementation(() => {});
+    const lazy = vi
+      .spyOn(DatabaseSaveTrigger, "triggerSave")
+      .mockResolvedValue();
+    try {
+      await createCurrentRepositoryLazyWriteHook("test")?.();
+      expect(lazy).not.toHaveBeenCalled();
+      expect(dirty).toHaveBeenCalledOnce();
+    } finally {
+      vi.restoreAllMocks();
+    }
+  });
+
   it("installs a debounced persist hook only for sqlite", () => {
     process.env[DATABASE_DIALECT_ENV] = "sqlite";
     expect(createCurrentRepositoryLazyWriteHook("test")).toBeTypeOf("function");

@@ -77,17 +77,17 @@ export function createCurrentRepositoryWriteHook(
  * Post-write hook for high-frequency, non-critical writes (telemetry
  * inserts/cleanup, informational timestamp touches).
  *
- * Marks the in-memory database dirty and lets DatabaseSaveTrigger's existing
- * debounce coalesce the actual serialize+encrypt, instead of forcing one on
- * every single sample. Losing up to 30 seconds of these on a crash is
- * acceptable; blocking the event loop that serves SSH traffic on every metric
- * sample is not.
+ * Only marks the in-memory database dirty, so the write joins the periodic
+ * flush. Every save serializes and encrypts the whole file, and these writes
+ * run on every SSH connect; even the 30 s debounced save kept the disk
+ * rewriting the file about once a minute. Losing up to one flush interval of
+ * these on a crash is acceptable; the shutdown save covers clean stops.
  */
 export function createCurrentRepositoryLazyWriteHook(
-  reason: string,
+  _reason: string,
 ): (() => Promise<void>) | undefined {
   if (!needsExplicitPersist(resolveDatabaseDialect())) return undefined;
-  return () => DatabaseSaveTrigger.triggerSave(reason);
+  return async () => DatabaseSaveTrigger.markDirty();
 }
 
 /**
